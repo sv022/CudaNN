@@ -626,9 +626,9 @@ int main(){
     
     // n.forward(input);
     
-    n.train("data_fashion_train.txt", 5000, 10);
+    n.train("data/data_fashion_train.txt", 5000, 10);
 
-    float accuracy = n.test("data_fashion_test.txt", 50);
+    float accuracy = n.test("data/data_fashion_test.txt", 50);
     
     std::cout << "Accuracy: " << accuracy << '\n';
     
