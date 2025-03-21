@@ -60,8 +60,8 @@ NeuralNetwork::NeuralNetwork(int i_nodes, int h_nodes, int o_nodes, double lr) {
     wih = (float*)malloc(sizeof(float) * h_nodes * i_nodes);
     who = (float*)malloc(sizeof(float) * o_nodes * h_nodes);
 
-    Matrix::initRandomf_static(wih, h_nodes, i_nodes, 0, 1 / sqrt(i_nodes));
-    Matrix::initRandomf_static(who, o_nodes, h_nodes, 0, 1 / sqrt(h_nodes));
+    Matrix::initRandomf_static(wih, h_nodes, i_nodes, -1 / sqrt(i_nodes), 1 / sqrt(i_nodes));
+    Matrix::initRandomf_static(who, o_nodes, h_nodes, -1 / sqrt(h_nodes), 1 / sqrt(h_nodes));
 
     hidden_inputs = (float*)malloc(sizeof(float) * h_nodes);
     hidden_outputs = (float*)malloc(sizeof(float) * h_nodes);
@@ -149,27 +149,28 @@ void NeuralNetwork::forward(float *inputs){
         cudaMemcpyHostToDevice
     );
     
-    dim3 THREADS(16, 16);
-    dim3 BLOCKS(
-        (1 + THREADS.x - 1) / THREADS.x, 
-        (input_nodes + THREADS.y - 1) / THREADS.y
-    );
+    dim3 THREADS(32, 32);
+
+	dim3 weightsInputBlocksPerGrid(
+		((1 + THREADS.x - 1) / THREADS.x),
+        ((hidden_nodes + THREADS.y - 1) / THREADS.y)
+	);
     
-    Kernel::dot<<<BLOCKS, THREADS>>>(d_wih, d_inputs, d_hidden_inputs, hidden_nodes, input_nodes, 1);
- 
+    Kernel::dot<<<weightsInputBlocksPerGrid, THREADS>>>(d_wih, d_inputs, d_hidden_inputs, hidden_nodes, input_nodes, 1);
+    
     cudaMemcpy(
         hidden_inputs,
         d_hidden_inputs,
         hidden_nodes * 1 * sizeof(float),
         cudaMemcpyDeviceToHost
     );
-
+    
     // Matrix::log_static(hidden_inputs, hidden_nodes, 1);
-
+    
     cudaFree(d_wih);
     cudaFree(d_inputs);
     cudaFree(d_hidden_inputs);
-
+    
     cudaDeviceSynchronize();
 
     // ----- step 2 -----
@@ -193,7 +194,12 @@ void NeuralNetwork::forward(float *inputs){
         cudaMemcpyHostToDevice
     );
     
-    Kernel::map<<<BLOCKS, THREADS>>>(d_hidden_inputs, d_hidden_outputs, hidden_nodes, 1);
+    dim3 activationsHiddenBlocksPerGrid(
+        (hidden_nodes + THREADS.x - 1) / THREADS.x,
+        (hidden_nodes + THREADS.x - 1) / THREADS.x
+	);
+    
+    Kernel::map<<<activationsHiddenBlocksPerGrid, THREADS>>>(d_hidden_inputs, d_hidden_outputs, hidden_nodes, 1);
     
     cudaMemcpy(
         hidden_outputs,
@@ -201,25 +207,23 @@ void NeuralNetwork::forward(float *inputs){
         hidden_nodes * sizeof(float),
         cudaMemcpyDeviceToHost
     );
-
-
+    
+    
     cudaFree(d_hidden_inputs);
     cudaFree(d_hidden_outputs);
-
+    
     cudaDeviceSynchronize();
-
-    // Matrix::log_static(hidden_outputs, hidden_nodes, 1);
     
     // ----- step 3 -----
-
+    
     // d_hidden_inputs = 0;
     float *d_who = 0;
     float *d_final_inputs = 0;
-
+    
     cudaMalloc(&d_hidden_outputs, hidden_nodes * 1 * sizeof(float));
     cudaMalloc(&d_who, output_nodes * hidden_nodes * sizeof(float));
     cudaMalloc(&d_final_inputs, output_nodes * 1 * sizeof(float));
-
+    
     cudaMemcpy(
         d_who,
         who,
@@ -238,9 +242,14 @@ void NeuralNetwork::forward(float *inputs){
         output_nodes * 1 * sizeof(float),
         cudaMemcpyHostToDevice
     );
+    
+    dim3 weightsHiddenBlocksPerGrid(
+        ((1 + THREADS.x - 1) / THREADS.x),
+        ((output_nodes + THREADS.y - 1) / THREADS.y)
+    );
 
-    Kernel::dot<<<BLOCKS, THREADS>>>(d_who, d_hidden_outputs, d_final_inputs, output_nodes, hidden_nodes, 1);
-
+    Kernel::dot<<<weightsHiddenBlocksPerGrid, THREADS>>>(d_who, d_hidden_outputs, d_final_inputs, output_nodes, hidden_nodes, 1);
+    
     cudaMemcpy(
         final_inputs,
         d_final_inputs,
@@ -274,8 +283,13 @@ void NeuralNetwork::forward(float *inputs){
         output_nodes * sizeof(float),
         cudaMemcpyHostToDevice
     );
+
+    dim3 activationsOutputBlocksPerGrid(
+		(output_nodes + THREADS.x - 1) / THREADS.x,
+        (output_nodes + THREADS.x - 1) / THREADS.x
+	);
     
-    Kernel::map<<<BLOCKS, THREADS>>>(d_final_inputs, d_output, output_nodes, 1);
+    Kernel::map<<<activationsOutputBlocksPerGrid, THREADS>>>(d_final_inputs, d_output, output_nodes, 1);
 
     cudaMemcpy(
         output,
@@ -344,15 +358,20 @@ void NeuralNetwork::train(float *inputs, float *targets){
         cudaMemcpyHostToDevice
     );
 
-    dim3 THREADS(16, 16);
-    dim3 BLOCKS(
-        (1 + THREADS.x - 1) / THREADS.x, 
-        (input_nodes + THREADS.y - 1) / THREADS.y
+    dim3 THREADS(32, 32);
+    dim3 d_whoTransposeBlocksPerGrid(
+        (output_nodes + THREADS.x - 1) / THREADS.x, 
+        (output_nodes + THREADS.x - 1) / THREADS.x
     );
 
-    Kernel::transpose<<<BLOCKS, THREADS>>>(d_who, d_who_T, output_nodes, hidden_nodes);
+    Kernel::transpose<<<d_whoTransposeBlocksPerGrid, THREADS>>>(d_who, d_who_T, output_nodes, hidden_nodes);
 
-    Kernel::dot<<<BLOCKS, THREADS>>>(d_who_T, d_output_errors, d_hidden_errors, hidden_nodes, output_nodes, 1);
+    dim3 hidden_errorsBlocksPerGrid(
+        (hidden_nodes + THREADS.x - 1) / THREADS.x, 
+        (hidden_nodes + THREADS.x - 1) / THREADS.x
+    );
+
+    Kernel::dot<<<hidden_errorsBlocksPerGrid, THREADS>>>(d_who_T, d_output_errors, d_hidden_errors, hidden_nodes, output_nodes, 1);
 
     cudaMemcpy(
         hidden_errors,
@@ -418,7 +437,12 @@ void NeuralNetwork::train(float *inputs, float *targets){
         cudaMemcpyHostToDevice
     );
 
-    Kernel::add<<<BLOCKS, THREADS>>>(d_who, d_who_grad, d_who_grad_res, output_nodes, hidden_nodes);
+    dim3 d_who_gradBlocksPerGrid(
+        (output_nodes + THREADS.x - 1) / THREADS.x, 
+        (output_nodes + THREADS.x - 1) / THREADS.x
+    );
+
+    Kernel::add<<<d_who_gradBlocksPerGrid, THREADS>>>(d_who, d_who_grad, d_who_grad_res, output_nodes, hidden_nodes);
 
     cudaMemcpy(
         who_grad_res,
@@ -488,13 +512,12 @@ void NeuralNetwork::train(float *inputs, float *targets){
         cudaMemcpyHostToDevice
     );
 
-    dim3 THREADS_WIH(16, 16);
-    dim3 BLOCKS_WIH(
-        (input_nodes + THREADS.x - 1) / THREADS.x, 
-        (hidden_nodes + THREADS.y - 1) / THREADS.y
+    dim3 d_wih_gradBlocksPerGrid(
+        (hidden_nodes + THREADS.x - 1) / THREADS.x, 
+        (hidden_nodes + THREADS.x - 1) / THREADS.x
     );
 
-    Kernel::add<<<BLOCKS_WIH, THREADS_WIH>>>(d_wih, d_wih_grad, d_wih_grad_res, hidden_nodes, input_nodes);
+    Kernel::add<<<d_wih_gradBlocksPerGrid, THREADS>>>(d_wih, d_wih_grad, d_wih_grad_res, hidden_nodes, input_nodes);
 
     cudaMemcpy(
         wih_grad_res,
@@ -624,9 +647,7 @@ int main(){
     // Matrix::initRandomf_static(target, output_nodes, 1);
     // for (int i = 0; i < output_nodes; i++) std::cout << target[i] << ' ';
     
-    // n.forward(input);
-    
-    n.train("data/data_fashion_train.txt", 5000, 10);
+    n.train("data/data_fashion_train.txt", 5000, 20);
 
     float accuracy = n.test("data/data_fashion_test.txt", 50);
     
