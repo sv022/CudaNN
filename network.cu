@@ -49,7 +49,7 @@ private:
     void forward(float *inputs);
     void train(std::string data, int data_size, int epochs);
     int predict(float *input);
-    float test(std::string filePath, int data_size);
+    float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 };
 
 NeuralNetwork::NeuralNetwork(int i_nodes, int h_nodes, int o_nodes, double lr) {
@@ -620,8 +620,8 @@ int NeuralNetwork::predict(float *input){
     return prediction;
 }
 
-float NeuralNetwork::test(std::string filePath, int data_size) {
-	bool debug = true;
+float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets, int* test_guesses) {
+	// bool debug = true;
 	int correctGuesses = 0;
 
     float *images = (float*)malloc(input_nodes * sizeof(float) * data_size);
@@ -639,10 +639,14 @@ float NeuralNetwork::test(std::string filePath, int data_size) {
         for (int p = 0; p < output_nodes; p++) target[p] = targets[i * output_nodes + p];
 
 		int result = predict(image);
+        int test_target = getMaxActivationIndex(target);
 
-		if(result == getMaxActivationIndex(target)) correctGuesses++; 
+		if(result == test_target) correctGuesses++; 
 
-		if (debug) std::cout << getMaxActivationIndex(target) << " guess: " << result << '\n';	
+		// if (debug) std::cout << test_target << " guess: " << result << '\n';
+
+        test_targets[i] = test_target;
+        test_guesses[i] = result;
         
         free(image);
         free(target);

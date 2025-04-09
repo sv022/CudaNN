@@ -1,0 +1,69 @@
+#include <fstream>
+#include <string>
+#include <ctime>
+
+std::string get_current_datetime_simple() {
+    time_t now = time(nullptr);
+    char buf[80];
+    strftime(buf, sizeof(buf), "%Y_%m_%d_%H%M%S", localtime(&now));
+    return std::string(buf);
+}
+
+void save_report(
+    int input_nodes,
+    int hidden_nodes,
+    int output_nodes,
+    float learning_rate,
+    int epochs,
+    int train_data_size,
+    int test_data_size,
+    float test_accuracy,
+    int* test_targets,
+    int* test_guesses,
+    std::string saved_weights
+) {
+    std::string json_test_targets = "[";
+    std::string json_test_guesses = "[";
+
+    for (int i = 0; i < test_data_size; ++i) {
+        if (i > 0) {
+            json_test_targets += ", ";
+            json_test_guesses += ", ";
+        }
+        json_test_targets += std::to_string(test_targets[i]);
+        json_test_guesses += std::to_string(test_guesses[i]);
+    }
+
+    json_test_targets += "]";
+    json_test_guesses += "]";
+
+    
+    std::string json_content = 
+        "{\n"
+        "    \"inputNodes\": " + std::to_string(input_nodes) + ",\n"
+        "    \"hiddenNodes\": " + std::to_string(hidden_nodes) + ",\n"
+        "    \"outputNodes\": " + std::to_string(output_nodes) + ",\n"
+        "    \"learningRate\": " + std::to_string(learning_rate) + ",\n"
+        "    \"epochs\": " + std::to_string(epochs) + ",\n"
+        "    \"trainDataSize\": " + std::to_string(train_data_size) + ",\n"
+        "    \"testDataSize\": " + std::to_string(test_data_size) + ",\n"
+        "    \"testAccuracy\": " + std::to_string(test_accuracy) + ",\n"
+        "    \"testTargets\": " + json_test_targets + ",\n"
+        "    \"testGuesses\": " + json_test_guesses + ",\n"
+        "    \"savedWeights\": " + (saved_weights == "" ? "null" : saved_weights) + "\n"
+        "}";
+
+    std::string filename;
+    filename = get_current_datetime_simple() + "_neuron_report.run.json";
+
+    std::ofstream file(filename);
+    if (!file) {
+        return;
+    }
+
+    file << json_content;
+
+    if (!file.good()) {
+        return;
+    }
+}

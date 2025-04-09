@@ -14,6 +14,7 @@
 output/
 test.cpp
 test.json
+*.run.json
 
 *.i
 *.ii

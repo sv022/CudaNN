@@ -1,10 +1,16 @@
 #include"network.cu"
+#include"utils/report.h"
 
 int main(){
     const int input_nodes = 784;
     int hidden_nodes = 256;
     const int output_nodes = 10;
-    NeuralNetwork n(input_nodes, hidden_nodes, output_nodes, 0.3);
+    float learning_rate = 0.3;
+    NeuralNetwork n(input_nodes, hidden_nodes, output_nodes, learning_rate);
+
+    int epochs = 5;
+    int train_data_size = 5000;
+    int test_data_size = 50;
 
     // float input[input_nodes];
     // Matrix::initRandomf_static(input, input_nodes, 1);
@@ -14,12 +20,26 @@ int main(){
     // Matrix::initRandomf_static(target, output_nodes, 1);
     // for (int i = 0; i < output_nodes; i++) std::cout << target[i] << ' ';
     
-    n.train("data/data_fashion_train.txt", 5000, 20);
+    n.train("data/data_fashion_train.txt", train_data_size, epochs);
 
-    float accuracy = n.test("data/data_fashion_test.txt", 50);
+    int *test_targets = (int*)malloc(sizeof(int) * test_data_size);
+    int *test_guesses = (int*)malloc(sizeof(int) * test_data_size);
+
+    float accuracy = n.test("data/data_fashion_test.txt", test_data_size, test_targets, test_guesses);
     
-    std::cout << "Accuracy: " << accuracy << '\n';
+    save_report(
+        input_nodes,
+        hidden_nodes,
+        output_nodes,
+        learning_rate,
+        epochs,
+        train_data_size,
+        test_data_size,
+        accuracy,
+        test_targets,
+        test_guesses,
+        ""
+    );
 
-    // for (int i = 0; i < label_size; i++) std::cout << targets[i] << ' ';
     return 0;
 }
