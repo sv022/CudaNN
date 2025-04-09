@@ -1,9 +1,11 @@
+#pragma once
 #include<iostream>
 #include"matrix/matrix.cuh"
 #include<string>
 #include<fstream>
 #include<vector>
 #include"utils/progressbar.h"
+#include"utils/utils.h"
 
 
 std::vector<std::string> split(std::string str, char c) {
@@ -669,6 +671,12 @@ void NeuralNetwork::save_weights(std::string filename){
 }
 
 void NeuralNetwork::load_weights(std::string filename){
+    if (!check_file_exists(filename)) {
+        std::cout << "Failed to load weights " << filename << ". Press any key to continue...";
+        char press_to_continue;
+        std::cin >> press_to_continue;
+        exit(1);
+    }
     std::ifstream file(filename, std::ios::binary);
 
     free(wih);

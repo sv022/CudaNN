@@ -17,6 +17,13 @@ void save_report(
     int* test_guesses,
     std::string saved_weights
 ) {
+    if (!check_folder_exists(current_directory + "/runs")){
+        std::cout << "Directory " << current_directory + "/runs" << " does not exits. Try creating it first. Press any key to continue...";
+        char press_to_continue;
+        std::cin >> press_to_continue;
+        exit(1);
+    }
+
     std::string json_test_targets = "[";
     std::string json_test_guesses = "[";
 
@@ -73,6 +80,13 @@ void save_report(
     int* test_targets,
     int* test_guesses
 ) {
+    if (!check_folder_exists(current_directory + "/predict")){
+        std::cout << "Directory " << current_directory + "/predict" << " does not exits. Try creating it first. Press any key to continue...";
+        char press_to_continue;
+        std::cin >> press_to_continue;
+        exit(1);
+    }
+    
     std::string json_test_targets = "[";
     std::string json_test_guesses = "[";
 
