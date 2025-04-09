@@ -50,6 +50,9 @@ private:
     void train(std::string data, int data_size, int epochs);
     int predict(float *input);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
+
+    void save_weights(std::string filename);
+    void load_weights(std::string filename);
 };
 
 NeuralNetwork::NeuralNetwork(int i_nodes, int h_nodes, int o_nodes, double lr) {
@@ -656,4 +659,24 @@ float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets
     free(targets);
 
 	return (float)correctGuesses / data_size;
+}
+
+void NeuralNetwork::save_weights(std::string filename){
+    std::ofstream file(filename, std::ios::binary);
+    
+    file.write(reinterpret_cast<const char*>(wih), sizeof(float) * hidden_nodes * input_nodes);
+    file.write(reinterpret_cast<const char*>(who), sizeof(float) * output_nodes * hidden_nodes);
+}
+
+void NeuralNetwork::load_weights(std::string filename){
+    std::ifstream file(filename, std::ios::binary);
+
+    free(wih);
+    free(who);
+
+    wih = (float*)malloc(sizeof(float) * hidden_nodes * input_nodes);
+    who = (float*)malloc(sizeof(float) * output_nodes * hidden_nodes);
+    
+    file.read(reinterpret_cast<char*>(wih), sizeof(float) * hidden_nodes * input_nodes);
+    file.read(reinterpret_cast<char*>(who), sizeof(float) * output_nodes * hidden_nodes);
 }

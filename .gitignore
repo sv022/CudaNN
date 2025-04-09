@@ -13,8 +13,11 @@
 
 output/
 test.cpp
+test.cu
 test.json
 *.run.json
+*.weights.bin
+*.bin
 
 *.i
 *.ii
