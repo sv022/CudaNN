@@ -4,6 +4,7 @@
 
 
 void save_report(
+    std::string current_directory,
     int input_nodes,
     int hidden_nodes,
     int output_nodes,
@@ -48,7 +49,7 @@ void save_report(
         "}";
 
     std::string filename;
-    filename = get_current_datetime_simple() + "_neuron_report.run.json";
+    filename = current_directory + "/runs/" + get_current_datetime_simple() + "_neuron_report.run.json";
 
     std::ofstream file(filename);
     if (!file) {

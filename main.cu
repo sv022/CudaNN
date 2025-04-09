@@ -4,11 +4,11 @@
 #include <cstdlib>
 
 int main(int argc, char* argv[]) {
-    if (argc < 11) {
+    if (argc < 12) {
         std::cerr << "Usage: " << argv[0] << " "
                   << "<input_nodes> <hidden_nodes> <output_nodes> <learning_rate> "
                   << "<epochs> <train_data_size> <test_data_size> "
-                  << "<train_data_path> <test_data_path> <save_weights>\n";
+                  << "<train_data_path> <test_data_path> <save_weights> <current_dir>\n";
         return 1;
     }
 
@@ -27,12 +27,14 @@ int main(int argc, char* argv[]) {
     std::string test_data = argv[9];
     bool save_weights = std::stoi(argv[10]);
 
+    std::string current_directory = argv[11];
+
     n.train(train_data, train_data_size, epochs);
 
     std::string saved_weights_filename = "";
 
     if (save_weights) {
-        saved_weights_filename = get_current_datetime_simple() + "_neuron.weights.bin";
+        saved_weights_filename = current_directory + "/runs/" + get_current_datetime_simple() + "_neuron.weights.bin";
         n.save_weights(saved_weights_filename);
     }
 
@@ -45,6 +47,7 @@ int main(int argc, char* argv[]) {
     free(test_guesses);
 
     save_report(
+        current_directory,
         input_nodes,
         hidden_nodes,
         output_nodes,

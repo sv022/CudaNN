@@ -12,6 +12,7 @@
 *.vsix
 
 output/
+runs/
 test.cpp
 test.cu
 test.json
