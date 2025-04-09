@@ -12,6 +12,8 @@
 *.vsix
 
 output/
+test.cpp
+test.json
 
 *.i
 *.ii
