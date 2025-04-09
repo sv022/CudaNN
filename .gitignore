@@ -13,6 +13,7 @@
 
 output/
 runs/
+predict/
 test.cpp
 test.cu
 test.json
