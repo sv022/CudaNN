@@ -1,13 +1,7 @@
 #include <fstream>
 #include <string>
-#include <ctime>
+#include"utils.h"
 
-std::string get_current_datetime_simple() {
-    time_t now = time(nullptr);
-    char buf[80];
-    strftime(buf, sizeof(buf), "%Y_%m_%d_%H%M%S", localtime(&now));
-    return std::string(buf);
-}
 
 void save_report(
     int input_nodes,
@@ -50,7 +44,7 @@ void save_report(
         "    \"testAccuracy\": " + std::to_string(test_accuracy) + ",\n"
         "    \"testTargets\": " + json_test_targets + ",\n"
         "    \"testGuesses\": " + json_test_guesses + ",\n"
-        "    \"savedWeights\": " + (saved_weights == "" ? "null" : saved_weights) + "\n"
+        "    \"savedWeights\": " + (saved_weights == "" ? "null" : "\"" + saved_weights + "\"") + "\n"
         "}";
 
     std::string filename;

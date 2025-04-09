@@ -1,31 +1,44 @@
 #include"network.cu"
 #include"utils/report.h"
+#include <iostream>
+#include <cstdlib>
 
-int main(){
-    const int input_nodes = 784;
-    int hidden_nodes = 256;
-    const int output_nodes = 10;
-    float learning_rate = 0.3;
+int main(int argc, char* argv[]) {
+    if (argc < 11) {
+        std::cerr << "Usage: " << argv[0] << " "
+                  << "<input_nodes> <hidden_nodes> <output_nodes> <learning_rate> "
+                  << "<epochs> <train_data_size> <test_data_size> "
+                  << "<train_data_path> <test_data_path> <save_weights>\n";
+        return 1;
+    }
+
+    const int input_nodes = std::stoi(argv[1]);
+    int hidden_nodes = std::stoi(argv[2]);
+    const int output_nodes = std::stoi(argv[3]);
+    float learning_rate = std::stof(argv[4]);
+
     NeuralNetwork n(input_nodes, hidden_nodes, output_nodes, learning_rate);
 
-    int epochs = 5;
-    int train_data_size = 5000;
-    int test_data_size = 50;
+    int epochs = std::stoi(argv[5]);
+    int train_data_size = std::stoi(argv[6]);
+    int test_data_size = std::stoi(argv[7]);
 
-    // float input[input_nodes];
-    // Matrix::initRandomf_static(input, input_nodes, 1);
-    // // for (int i = 0; i < input_nodes; i++) std::cout << input[i] << ' ';
-    // std::cout << '\n';
-    // float target[output_nodes];
-    // Matrix::initRandomf_static(target, output_nodes, 1);
-    // for (int i = 0; i < output_nodes; i++) std::cout << target[i] << ' ';
-    
-    n.train("data/data_fashion_train.txt", train_data_size, epochs);
+    std::string train_data = argv[8];
+    std::string test_data = argv[9];
+    bool save_weights = std::stoi(argv[10]);
 
-    int *test_targets = (int*)malloc(sizeof(int) * test_data_size);
-    int *test_guesses = (int*)malloc(sizeof(int) * test_data_size);
+    n.train(train_data, train_data_size, epochs);
 
-    float accuracy = n.test("data/data_fashion_test.txt", test_data_size, test_targets, test_guesses);
+    std::string saved_weights = "";
+
+    if (save_weights) {
+        saved_weights = "neuron.run.bin";
+    }
+
+    int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
+    int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
+
+    float accuracy = n.test(test_data, test_data_size, test_targets, test_guesses);
     
     save_report(
         input_nodes,
@@ -38,8 +51,11 @@ int main(){
         accuracy,
         test_targets,
         test_guesses,
-        ""
+        saved_weights
     );
+
+    free(test_targets);
+    free(test_guesses);
 
     return 0;
 }
