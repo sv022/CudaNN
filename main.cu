@@ -29,7 +29,9 @@ int main(int argc, char* argv[]) {
 
     std::string current_directory = argv[11];
 
-    n.train(train_data, train_data_size, epochs);
+    float* accuracy_history = (float*)malloc(sizeof(float) * epochs);
+
+    n.train(train_data, train_data_size, epochs, accuracy_history);
 
     std::string saved_weights_filename = "";
 
@@ -43,9 +45,7 @@ int main(int argc, char* argv[]) {
 
     float accuracy = n.test(test_data, test_data_size, test_targets, test_guesses);
     
-    free(test_targets);
-    free(test_guesses);
-
+    
     save_report(
         current_directory,
         input_nodes,
@@ -56,10 +56,14 @@ int main(int argc, char* argv[]) {
         train_data_size,
         test_data_size,
         accuracy,
+        accuracy_history,
         test_targets,
         test_guesses,
         saved_weights_filename
     );
 
+    free(test_targets);
+    free(test_guesses);
+    
     return 0;
 }
