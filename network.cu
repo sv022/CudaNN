@@ -2,6 +2,7 @@
 #include<iostream>
 #include"matrix/matrix.cuh"
 #include<string>
+#include <sstream>
 #include<fstream>
 #include<vector>
 #include"utils/progressbar.h"
@@ -45,6 +46,7 @@ private:
 
     int getMaxActivationIndex(float *target);
     void LoadData(std::string filePath, int data_size, float *images, float *labels);
+    void LoadDataCVS(std::string filePath, int data_size, float* images, float* labels);
     public:
     bool train(float *inputs, float *targets);
     NeuralNetwork(int i_nodes, int h_nodes, int o_nodes, double lr);
@@ -121,6 +123,53 @@ void NeuralNetwork::LoadData(std::string filePath, int data_size, float *images,
     }
 
 	input_file.close();
+}
+
+void NeuralNetwork::LoadDataCVS(std::string filePath, int data_size, float* images, float* labels) {
+    std::ifstream input_file(filePath);
+    if (!input_file.is_open()) {
+        std::cerr << "Error: Could not open file " << filePath << std::endl;
+        return;
+    }
+
+    std::string line;
+    int image_count = 0;
+    bool skip_header = true;
+
+    while (std::getline(input_file, line) && image_count < data_size) {
+        if (skip_header) {
+            skip_header = false;
+            continue;
+        }
+
+        std::vector<std::string> parts;
+        std::stringstream ss(line);
+        std::string item;
+
+        while (std::getline(ss, item, ',')) {
+            parts.push_back(item);
+        }
+
+        if (parts.size() < 2) {
+            continue; 
+        }
+
+        float label = std::stof(parts[0]);
+        for (int i = 0; i < output_nodes; i++){
+            if (i == label)
+                labels[image_count * output_nodes + i] = 1;
+            else 
+                labels[image_count * output_nodes + i] = 0;
+        }
+
+        for (size_t i = 1; i < parts.size(); i++) {
+            images[image_count * (parts.size() - 1) + (i - 1)] = std::stof(parts[i]);
+        }
+
+        image_count++;
+    }
+
+    input_file.close();
 }
 
 void NeuralNetwork::forward(float *inputs){
@@ -562,9 +611,12 @@ bool NeuralNetwork::train(float *inputs, float *targets){
 void NeuralNetwork::train(std::string data, int data_size, int epochs, float* accuracy_by_epoch){
     float *images = (float*)malloc(input_nodes * sizeof(float) * data_size);
     float *targets = (float*)malloc(output_nodes * sizeof(float) * data_size);
-    
-    LoadData(data, data_size, images, targets);
 
+    if (data.substr(data.find_last_of(".") + 1) == "csv") 
+        LoadDataCVS(data, data_size, images, targets);
+    else 
+        LoadData(data, data_size, images, targets);
+    
     std::cout << "Data " << data << " loaded. Starting training for " << epochs << " epochs..." << '\n';
 
     int progress_tick = data_size / 10;
@@ -643,7 +695,10 @@ float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets
     float *images = (float*)malloc(input_nodes * sizeof(float) * data_size);
     float *targets = (float*)malloc(output_nodes * sizeof(float) * data_size);
     
-    LoadData(filePath, data_size, images, targets);
+    if (filePath.substr(filePath.find_last_of(".") + 1) == "csv") 
+        LoadDataCVS(filePath, data_size, images, targets);
+    else 
+        LoadData(filePath, data_size, images, targets);
 
     std::cout << "Data " << filePath << " loaded. Starting testing..." << '\n';
 
