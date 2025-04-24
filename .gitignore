@@ -17,6 +17,7 @@ predict/
 test.cpp
 test.cu
 test.json
+network_test.cu
 *.run.json
 *.weights.bin
 *.bin
