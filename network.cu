@@ -177,6 +177,7 @@ void NeuralNetwork::forward(float *inputs){
     float *d_wih = 0;
     float *d_inputs = 0;
 	float *d_hidden_inputs = 0;
+    float *d_hidden_outputs;
 
     // Matrix::log_static(wih, hidden_nodes, input_nodes);
     // Matrix::log_static(inputs, input_nodes, 1);
@@ -184,6 +185,7 @@ void NeuralNetwork::forward(float *inputs){
 	cudaMalloc(&d_wih, input_nodes * hidden_nodes * sizeof(float));
 	cudaMalloc(&d_inputs, 1 * input_nodes * sizeof(float));
     cudaMalloc(&d_hidden_inputs, 1 * hidden_nodes * sizeof(float));
+    cudaMalloc(&d_hidden_outputs, hidden_nodes * sizeof(float));
     
     cudaMemcpy(
         d_wih,
@@ -203,6 +205,12 @@ void NeuralNetwork::forward(float *inputs){
         1 * hidden_nodes * sizeof(float),
         cudaMemcpyHostToDevice
     );
+    cudaMemcpy(
+        d_hidden_outputs,
+        hidden_outputs,
+        hidden_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
     
     dim3 THREADS(32, 32);
 
@@ -210,74 +218,42 @@ void NeuralNetwork::forward(float *inputs){
 		((1 + THREADS.x - 1) / THREADS.x),
         ((hidden_nodes + THREADS.y - 1) / THREADS.y)
 	);
-    
-    Kernel::dot<<<weightsInputBlocksPerGrid, THREADS>>>(d_inputs, d_wih, d_hidden_inputs, 1, input_nodes, hidden_nodes);
-    
-    cudaMemcpy(
-        hidden_inputs,
-        d_hidden_inputs,
-        1 * hidden_nodes * sizeof(float),
-        cudaMemcpyDeviceToHost
+    dim3 activationsHiddenBlocksPerGrid(
+        (hidden_nodes + THREADS.x - 1) / THREADS.x,
+        (hidden_nodes + THREADS.x - 1) / THREADS.x
     );
     
+    Kernel::dot<<<weightsInputBlocksPerGrid, THREADS>>>(d_inputs, d_wih, d_hidden_inputs, 1, input_nodes, hidden_nodes);
+
+    cudaDeviceSynchronize();
+
+    Kernel::map<<<activationsHiddenBlocksPerGrid, THREADS>>>(d_hidden_inputs, d_hidden_outputs, 1, hidden_nodes);
+
     // Matrix::log_static(hidden_inputs, hidden_nodes, 1);
+    
+    cudaMemcpy(
+        hidden_outputs,
+        d_hidden_outputs,
+        hidden_nodes * sizeof(float),
+        cudaMemcpyDeviceToHost
+    );
     
     cudaFree(d_wih);
     cudaFree(d_inputs);
     cudaFree(d_hidden_inputs);
-    
-    cudaDeviceSynchronize();
-
-    // ----- step 2 -----
-    
-	// *d_hidden_inputs = 0;
-	float *d_hidden_outputs;
-    
-    cudaMalloc(&d_hidden_inputs, hidden_nodes * sizeof(float));
-    cudaMalloc(&d_hidden_outputs, hidden_nodes * sizeof(float));
-    
-    cudaMemcpy(
-        d_hidden_inputs,
-        hidden_inputs,
-        hidden_nodes * sizeof(float),
-        cudaMemcpyHostToDevice
-    );
-    cudaMemcpy(
-        d_hidden_outputs,
-        hidden_outputs,
-        hidden_nodes * sizeof(float),
-        cudaMemcpyHostToDevice
-    );
-    
-    dim3 activationsHiddenBlocksPerGrid(
-        (hidden_nodes + THREADS.x - 1) / THREADS.x,
-        (hidden_nodes + THREADS.x - 1) / THREADS.x
-	);
-    
-    Kernel::map<<<activationsHiddenBlocksPerGrid, THREADS>>>(d_hidden_inputs, d_hidden_outputs, 1, hidden_nodes);
-    
-    cudaMemcpy(
-        hidden_outputs,
-        d_hidden_outputs,
-        hidden_nodes * sizeof(float),
-        cudaMemcpyDeviceToHost
-    );
-    
-    
-    cudaFree(d_hidden_inputs);
     cudaFree(d_hidden_outputs);
     
-    cudaDeviceSynchronize();
-    
-    // ----- step 3 -----
+    // ----- step 2 -----
     
     // d_hidden_inputs = 0;
     float *d_who = 0;
     float *d_final_inputs = 0;
+    float *d_output = 0;
     
     cudaMalloc(&d_hidden_outputs, 1 * hidden_nodes * sizeof(float));
     cudaMalloc(&d_who, hidden_nodes * output_nodes * sizeof(float));
     cudaMalloc(&d_final_inputs, 1 * output_nodes * sizeof(float));
+    cudaMalloc(&d_output, output_nodes * sizeof(float));
     
     cudaMemcpy(
         d_who,
@@ -297,55 +273,30 @@ void NeuralNetwork::forward(float *inputs){
         1 * output_nodes * sizeof(float),
         cudaMemcpyHostToDevice
     );
+    cudaMemcpy(
+        d_output,
+        output,
+        output_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
     
     dim3 weightsHiddenBlocksPerGrid(
         ((1 + THREADS.x - 1) / THREADS.x),
         ((hidden_nodes + THREADS.y - 1) / THREADS.y)
     );
-
-    Kernel::dot<<<weightsHiddenBlocksPerGrid, THREADS>>>(d_hidden_outputs, d_who, d_final_inputs, 1, hidden_nodes, output_nodes);
-    
-    cudaMemcpy(
-        final_inputs,
-        d_final_inputs,
-        1 * output_nodes * sizeof(float),
-        cudaMemcpyDeviceToHost
-    );
-
-    // Matrix::log_static(final_inputs, output_nodes, 1);
-
-    cudaFree(d_who);
-    cudaFree(d_hidden_outputs);
-    cudaFree(d_final_inputs);
-
-    // ----- step 4 -----
-
-    // *d_final_inputs = 0
-    float *d_output = 0;
-
-    cudaMalloc(&d_final_inputs, output_nodes * sizeof(float));
-    cudaMalloc(&d_output, output_nodes * sizeof(float));
-
-    cudaMemcpy(
-        d_final_inputs,
-        final_inputs,
-        output_nodes * sizeof(float),
-        cudaMemcpyHostToDevice
-    );
-    cudaMemcpy(
-        d_output,
-        output,
-        output_nodes * sizeof(float),
-        cudaMemcpyHostToDevice
-    );
-
     dim3 activationsOutputBlocksPerGrid(
 		(output_nodes + THREADS.x - 1) / THREADS.x,
         (output_nodes + THREADS.x - 1) / THREADS.x
 	);
-    
+
+    Kernel::dot<<<weightsHiddenBlocksPerGrid, THREADS>>>(d_hidden_outputs, d_who, d_final_inputs, 1, hidden_nodes, output_nodes);
+
+    cudaDeviceSynchronize();
+
     Kernel::map<<<activationsOutputBlocksPerGrid, THREADS>>>(d_final_inputs, d_output, 1, output_nodes);
 
+    // Matrix::log_static(final_inputs, output_nodes, 1);
+    
     cudaMemcpy(
         output,
         d_output,
@@ -353,7 +304,8 @@ void NeuralNetwork::forward(float *inputs){
         cudaMemcpyDeviceToHost
     );
 
-
+    cudaFree(d_who);
+    cudaFree(d_hidden_outputs);
     cudaFree(d_final_inputs);
     cudaFree(d_output);
 
