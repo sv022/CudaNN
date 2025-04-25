@@ -9,6 +9,7 @@ namespace Kernel {
     // Kernel functions
     __global__ void dot(float *a, float *b, float *c, int N, int M, int P);
     __global__ void add(float *a, float *b, float *c, int R, int C);
+    __global__ void multadd(float *a, float *b, float *c, int R, int C, float k);
     __global__ void sub(float *a, float *b, float *c, int R, int C);
     __global__ void transpose(float *a, float *c, int R, int C);
     __global__ void map(float *a, float *c, int R, int C);
@@ -146,6 +147,26 @@ __global__ void Kernel::add(
     if (row >= R || col >= C) return;
 
     c[row * C + col] = a[row * C + col] + b[row * C + col];
+
+    return;
+}
+
+__global__ void Kernel::multadd(
+    float *a,
+    float *b,
+    float *c,
+    int R,
+    int C,
+    float k
+) {
+
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;	
+
+    // Abort if out of range
+    if (row >= R || col >= C) return;
+
+    c[row * C + col] = a[row * C + col] + k * b[row * C + col];
 
     return;
 }

@@ -332,7 +332,6 @@ bool NeuralNetwork::train(float *inputs, float *targets){
     float *hidden_errors = (float*)malloc(sizeof(float) * hidden_nodes);
     float *who_T = (float*)malloc(sizeof(float) * hidden_nodes * output_nodes);
 
-
     float *d_who = 0;
     float *d_who_T = 0;
     float *d_output_errors = 0;
@@ -373,13 +372,14 @@ bool NeuralNetwork::train(float *inputs, float *targets){
         (output_nodes + THREADS.x - 1) / THREADS.x, 
         (output_nodes + THREADS.x - 1) / THREADS.x
     );
-
-    Kernel::transpose<<<d_whoTransposeBlocksPerGrid, THREADS>>>(d_who, d_who_T, output_nodes, hidden_nodes);
-
     dim3 hidden_errorsBlocksPerGrid(
         (hidden_nodes + THREADS.x - 1) / THREADS.x, 
         (hidden_nodes + THREADS.x - 1) / THREADS.x
     );
+
+    Kernel::transpose<<<d_whoTransposeBlocksPerGrid, THREADS>>>(d_who, d_who_T, output_nodes, hidden_nodes);
+
+    cudaDeviceSynchronize();
 
     Kernel::dot<<<hidden_errorsBlocksPerGrid, THREADS>>>(d_output_errors, d_who_T, d_hidden_errors, 1, output_nodes, hidden_nodes);
 
@@ -392,7 +392,6 @@ bool NeuralNetwork::train(float *inputs, float *targets){
 
     // Matrix::log_static(hidden_errors, hidden_nodes, 1);
 
-    
     cudaFree(d_who);
     cudaFree(d_who_T);
     cudaFree(d_output_errors);
@@ -405,29 +404,40 @@ bool NeuralNetwork::train(float *inputs, float *targets){
         output_errors_sum[i] = output_errors[i] * output[i] * (1 - output[i]);
     }
 
-    // ---------- step 4 ----------
+    // ---------- step 4-5 ----------
 
     float *who_grad = (float*)malloc(sizeof(float) * hidden_nodes * output_nodes);
-    for (int i = 0; i < hidden_nodes; i++){
-        for (int j = 0; j < output_nodes; j++){
-            who_grad[i * output_nodes + j] = learning_rate * output_errors_sum[j] * hidden_outputs[i];
-        }
-    }
-    // Matrix::log_static(who_grad, output_nodes, hidden_nodes);
-
-    // ---------- step 5 ----------
-    
     float *who_grad_res = (float*)malloc(sizeof(float) * hidden_nodes * output_nodes);
 
-
-    // *d_who = 0;
+    float *d_output_errors_sum = 0;
+    float *d_hidden_outputs = 0;
     float *d_who_grad = 0;
     float *d_who_grad_res = 0;
-
-    cudaMalloc(&d_who, hidden_nodes * output_nodes * sizeof(float));
+    
+    cudaMalloc(&d_output_errors_sum, 1 * output_nodes * sizeof(float));
+    cudaMalloc(&d_hidden_outputs, 1 * hidden_nodes * sizeof(float));
     cudaMalloc(&d_who_grad, hidden_nodes * output_nodes * sizeof(float));
     cudaMalloc(&d_who_grad_res, hidden_nodes * output_nodes * sizeof(float));
-
+    cudaMalloc(&d_who, hidden_nodes * output_nodes * sizeof(float));
+    
+    cudaMemcpy(
+        d_output_errors_sum,
+        output_errors_sum,
+        output_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
+    cudaMemcpy(
+        d_hidden_outputs,
+        hidden_outputs,
+        hidden_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
+    cudaMemcpy(
+        d_who_grad,
+        who_grad,
+        hidden_nodes *  output_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
     cudaMemcpy(
         d_who,
         who,
@@ -435,42 +445,40 @@ bool NeuralNetwork::train(float *inputs, float *targets){
         cudaMemcpyHostToDevice
     );
     cudaMemcpy(
-        d_who_grad,
-        who_grad,
-        hidden_nodes * output_nodes * sizeof(float),
-        cudaMemcpyHostToDevice
-    );
-    cudaMemcpy(
-        d_who_grad_res,
-        who_grad_res,
-        hidden_nodes * output_nodes * sizeof(float),
-        cudaMemcpyHostToDevice
-    );
-
-    dim3 d_who_gradBlocksPerGrid(
-        (hidden_nodes + THREADS.x - 1) / THREADS.x, 
-        (hidden_nodes + THREADS.x - 1) / THREADS.x
-    );
-
-    Kernel::add<<<d_who_gradBlocksPerGrid, THREADS>>>(d_who, d_who_grad, d_who_grad_res, hidden_nodes, output_nodes);
-
-    cudaMemcpy(
         who_grad_res,
         d_who_grad_res,
         hidden_nodes * output_nodes * sizeof(float),
         cudaMemcpyDeviceToHost
     );
 
-    for (int i = 0; i < hidden_nodes * output_nodes; i++){
-        who[i] = who_grad_res[i];
-    }
+    dim3 who_gradBlocksPerGrid(
+        (hidden_nodes + THREADS.x - 1) / THREADS.x, 
+        (hidden_nodes + THREADS.x - 1) / THREADS.x
+    );
 
-    // Matrix::log_static(who_grad, output_nodes, hidden_nodes);
+    Kernel::dot<<<who_gradBlocksPerGrid, THREADS>>>(d_hidden_outputs, d_output_errors_sum, d_who_grad, hidden_nodes, 1, output_nodes);
+
+    cudaDeviceSynchronize();
+
+    Kernel::multadd<<<who_gradBlocksPerGrid, THREADS>>>(d_who, d_who_grad, d_who_grad_res, hidden_nodes, output_nodes, learning_rate);
+
+    free(who);
+    who = (float*)malloc(sizeof(float) * hidden_nodes * output_nodes);
+
+    cudaMemcpy(
+        who,
+        d_who_grad_res,
+        hidden_nodes * output_nodes * sizeof(float),
+        cudaMemcpyDeviceToHost
+    );
+
+    // Matrix::log_static(who, hidden_nodes, output_nodes, 'G');
     // Matrix::log_static(who, output_nodes, hidden_nodes);
-
-
-    cudaFree(d_who);
+                
+    cudaFree(d_hidden_outputs);
+    cudaFree(d_output_errors_sum);
     cudaFree(d_who_grad);
+    cudaFree(d_who);
     cudaFree(d_who_grad_res);
 
     // ---------- step 6 ----------
@@ -478,30 +486,24 @@ bool NeuralNetwork::train(float *inputs, float *targets){
     float *hidden_errors_sum = (float*)malloc(sizeof(float) * hidden_nodes);
     for (int i = 0; i < hidden_nodes; i++){
         hidden_errors_sum[i] = hidden_errors[i] * hidden_outputs[i] * (1 - hidden_outputs[i]);
-    }
-
-    // ---------- step 7 ----------
-
-    float *wih_grad = (float*)malloc(sizeof(float) * input_nodes * hidden_nodes);
-    for (int i = 0; i < input_nodes; i++){
-        for (int j = 0; j < hidden_nodes; j++){
-            wih_grad[i * hidden_nodes + j] = learning_rate * hidden_errors_sum[j] * inputs[i];
-        }
-    }
-    // Matrix::log_static(wih_grad, hidden_nodes, input_nodes);
-
-
-    // ---------- step 8 ----------
-
+    }      
+            
+    // ---------- step 7-8 ----------
+            
     float *wih_grad_res = (float*)malloc(sizeof(float) * hidden_nodes * input_nodes);
-
+    float *wih_grad = (float*)malloc(sizeof(float) * input_nodes * hidden_nodes);
+    
     float *d_wih = 0;
     float *d_wih_grad = 0;
     float *d_wih_grad_res = 0;
+    float *d_hidden_errors_sum = 0;
+    float *d_inputs = 0;
 
     cudaMalloc(&d_wih, hidden_nodes * input_nodes * sizeof(float));
     cudaMalloc(&d_wih_grad, hidden_nodes * input_nodes * sizeof(float));
     cudaMalloc(&d_wih_grad_res, hidden_nodes * input_nodes * sizeof(float));
+    cudaMalloc(&d_hidden_errors_sum, hidden_nodes  * sizeof(float));
+    cudaMalloc(&d_inputs, input_nodes * sizeof(float));
 
     cudaMemcpy(
         d_wih,
@@ -521,31 +523,48 @@ bool NeuralNetwork::train(float *inputs, float *targets){
         input_nodes * hidden_nodes * sizeof(float),
         cudaMemcpyHostToDevice
     );
+    cudaMemcpy(
+        d_hidden_errors_sum,
+        hidden_errors_sum,
+        hidden_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
+    cudaMemcpy(
+        d_inputs,
+        inputs,
+        input_nodes * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
 
-    dim3 d_wih_gradBlocksPerGrid(
+    dim3 wih_gradBlocksPerGrid(
         (input_nodes + THREADS.x - 1) / THREADS.x, 
         (input_nodes + THREADS.x - 1) / THREADS.x
     );
 
-    Kernel::add<<<d_wih_gradBlocksPerGrid, THREADS>>>(d_wih, d_wih_grad, d_wih_grad_res, input_nodes, hidden_nodes);
+    Kernel::dot<<<wih_gradBlocksPerGrid, THREADS>>>(d_inputs, d_hidden_errors_sum, d_wih_grad, input_nodes, 1, hidden_nodes);
+
+    cudaDeviceSynchronize();
+
+    Kernel::multadd<<<wih_gradBlocksPerGrid, THREADS>>>(d_wih, d_wih_grad, d_wih_grad_res, input_nodes, hidden_nodes, learning_rate);
+
+    free(wih);
+    wih = (float*)malloc(sizeof(float) * input_nodes * hidden_nodes);
 
     cudaMemcpy(
-        wih_grad_res,
+        wih,
         d_wih_grad_res,
         input_nodes * hidden_nodes * sizeof(float),
         cudaMemcpyDeviceToHost
     );
 
-    for (int i = 0; i < input_nodes * hidden_nodes; i++){
-        wih[i] = wih_grad_res[i];
-    }
-
-    // Matrix::log_static(wih_grad, output_nodes, hidden_nodes);
-    // Matrix::log_static(wih_grad_res, output_nodes, hidden_nodes);
+    // Matrix::log_static(wih_grad, input_nodes, hidden_nodes);
+    // Matrix::log_static(wih, input_nodes, hidden_nodes);
 
     cudaFree(d_wih);
     cudaFree(d_wih_grad);
     cudaFree(d_wih_grad_res);
+    cudaFree(d_inputs);
+    cudaFree(d_hidden_errors_sum);
 
     free(output_errors);
     free(hidden_errors);
