@@ -3,32 +3,23 @@
 #include <vector>
 #include <stdio.h>
 #include <string>
+#include<chrono>
 
 class ProgressBar
 {
 	public:
-		/* Takes in a char for filling up the bar and the size fo the bar */
 		ProgressBar(char notDoneChar, char doneChar, unsigned int size);
 		void end();
 		
 		unsigned int todo;
 		unsigned int done;
+		std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 		
-		/* Fills the bar upto a given number */
 		void fillUpCells(unsigned int cells);
-		
-		/* Fills the bar one by one */
 		void fillUp();
-		
-		/* Displays the percentage beside the bar */
 		void displayPercentage();
-	
-		
-		/* Shows tasks done out of the tasks to be done */
 		void displayTasksDone();
-
-		/* Returns the size of the progress bar */
-		unsigned int getSize();
+		void displayTimeElapsed();
 
 	private:
 		unsigned int size = 0;
@@ -39,7 +30,6 @@ class ProgressBar
 };
 
 
-/* Defining the constructor */
 ProgressBar::ProgressBar(char notDoneChar, char doneChar, unsigned int size)
 :c(doneChar), ch(notDoneChar), size(size), todo(0), done(0)
 {
@@ -59,9 +49,7 @@ ProgressBar::ProgressBar(char notDoneChar, char doneChar, unsigned int size)
 	bar.push_back(']');
 }
 
-/* Defining fillUpCells */
-void ProgressBar::fillUpCells(unsigned int cells)
-{
+void ProgressBar::fillUpCells(unsigned int cells) {
 	pos = 0;
 	for(int i = 1; i < cells; i++)
 	{
@@ -75,41 +63,30 @@ void ProgressBar::fillUpCells(unsigned int cells)
 	pos += cells;
 }
 
-/* Defining fillUp */
-void ProgressBar::fillUp()
-{
+void ProgressBar::fillUp() {
 	bar[pos] = c;
 	pos++;
 	
 	std::cout << '\r';
 	
-	for(int i = 0; i < bar.size(); i++)
-	{
+	for(int i = 0; i < bar.size(); i++) {
 		std::cout << bar[i] << std::flush;
 	}
 }
 
-/* Displays the percentage beside the bar */
-void ProgressBar::displayPercentage()
-{
+void ProgressBar::displayPercentage() {
 	float percent = ((float)pos / (float)(bar.size() - 1)) * 100;
 	std::cout << (int)percent << "%";
 }
 
-/* Shows tasks done out of the tasks to be done */
-void ProgressBar::displayTasksDone()
-{
+void ProgressBar::displayTasksDone() {
 	std::cout << '(' << done << '/' << todo << ')' << std::flush;
 }
 
-/* Returns the size of the progress bar */
-
-unsigned int ProgressBar::getSize()
-{
-	return bar.size() - 2;
+void ProgressBar::displayTimeElapsed() {
+	std::cout << '(' << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count() / 1000 << "s)" << std::flush;
 }
 
-void ProgressBar::end()
-{
+void ProgressBar::end() {
 	std::cout << std::endl;
 }

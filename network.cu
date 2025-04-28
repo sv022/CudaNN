@@ -617,7 +617,9 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, float* ac
                 data_progress.fillUp();
                 data_progress.displayPercentage();
                 std::cout << " | ";
-                data_progress.displayTasksDone();	
+                data_progress.displayTasksDone();
+                std::cout << " | ";
+                data_progress.displayTimeElapsed();	
             }
             data_progress.done++;
 
@@ -633,7 +635,9 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, float* ac
         data_progress.fillUp();
         data_progress.displayPercentage();
         std::cout << " | ";
-        data_progress.displayTasksDone();	
+        data_progress.displayTasksDone();
+        std::cout << " | ";
+        data_progress.displayTimeElapsed();
         data_progress.end();
     }
     free(images);
