@@ -1,0 +1,221 @@
+#pragma once
+#include<string>
+#include<vector>
+#include<fstream>
+#include<iostream>
+#include<sstream>
+
+
+std::vector<std::string> split(std::string str, char c) {
+	std::vector<std::string> array;
+	std::string element = "";
+
+	for (unsigned i = 0; i < str.length(); i++) {
+		if (str[i] != c)
+			element += str[i];
+		else if (str[i] == c && element != "") {
+			array.push_back(element);
+			element = "";
+		}
+	} if (element != "")
+		array.push_back(element);
+
+	return array;
+}
+
+
+class DatasetFile 
+{
+private:
+    int size;
+    int current_index;
+    int input_nodes;
+    int output_nodes;
+    std::string filepath;
+
+    bool isopen;
+
+    
+    float *images;
+    float *labels;
+    
+    void LoadData();
+    void LoadDataCSV();
+public:
+    float *image;
+    float *target;
+
+    DatasetFile(std::string filepath, int data_size, int inodes, int onodes);
+    ~DatasetFile();
+    void next();
+    void get(int index);
+    void reset();
+};
+
+DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes){
+    filepath = path;
+    size = data_size;
+    input_nodes = inodes;
+    output_nodes = onodes;
+    current_index = 0;
+
+    isopen = false;
+
+    image = (float*)malloc(input_nodes * sizeof(float));
+    target = (float*)malloc(output_nodes * sizeof(float));
+
+    images = (float*)malloc(input_nodes * size *  sizeof(float));
+    labels = (float*)malloc(output_nodes * size *  sizeof(float));
+
+    if (path.substr(path.find_last_of(".") + 1) == "csv") 
+        LoadDataCSV();
+    else 
+        LoadData();
+}
+
+DatasetFile::~DatasetFile()
+{
+    free(image);
+    free(target);
+    free(images);
+    free(labels);
+}
+
+void DatasetFile::LoadData() {
+	std::string line;
+	std::vector<std::string> part;
+	std::ifstream input_file(filepath);
+
+    if (!input_file.is_open()) {
+        std::cerr << "Error: Could not open file " << filepath << std::endl;
+        throw std::runtime_error("Error opening file.");
+    }
+
+    isopen = true;
+
+	std::vector<float> inputs;
+	std::vector<float> targets;
+
+	// чтение параметров из файла
+	int index = 0;
+    int image_count = 0;
+	if (input_file.is_open()) {
+		while (std::getline(input_file, line) && image_count < size) {
+			if (index % 2 == 0) { // входные данные
+				std::vector<double> input;
+				part = split(line, ' ');
+				for (unsigned p = 0; p < part.size(); p++){
+                    inputs.push_back(atof(part[p].c_str()));
+                }
+                
+			}
+			else { // разметка входных данных
+				std::vector<double> target;
+				part = split(line, ' ');
+				for (unsigned p = 0; p < part.size(); p++) {
+					targets.push_back(atof(part[p].c_str()));
+                }
+                image_count++;
+			}
+			index++;
+		}
+	}
+
+    for (int i = 0; i < inputs.size(); i++){
+        images[i] = inputs[i];
+    }
+    for (int i = 0; i < targets.size(); i++){
+        labels[i] = targets[i];
+    }
+
+    for (int p = 0; p < input_nodes; p++) image[p] = images[current_index * input_nodes + p];
+    for (int p = 0; p < output_nodes; p++) target[p] = labels[current_index * output_nodes + p];
+
+    reset();
+
+	input_file.close();
+}
+
+void DatasetFile::LoadDataCSV() {
+    std::ifstream input_file(filepath);
+    if (!input_file.is_open()) {
+        std::cerr << "Error: Could not open file " << filepath << std::endl;
+        throw std::runtime_error("Error opening file.");
+    }
+
+    isopen = true;
+
+    std::string line;
+    int image_count = 0;
+    bool skip_header = true;
+
+    while (std::getline(input_file, line) && image_count < size) {
+        if (skip_header) {
+            skip_header = false;
+            continue;
+        }
+
+        std::vector<std::string> parts;
+        std::stringstream ss(line);
+        std::string item;
+
+        while (std::getline(ss, item, ',')) {
+            parts.push_back(item);
+        }
+
+        if (parts.size() < 2) {
+            continue; 
+        }
+
+        float label = std::stof(parts[0]);
+        for (int i = 0; i < output_nodes; i++){
+            if (i == label)
+                labels[image_count * output_nodes + i] = 1;
+            else 
+                labels[image_count * output_nodes + i] = 0;
+        }
+
+        for (size_t i = 1; i < parts.size(); i++) {
+            images[image_count * (parts.size() - 1) + (i - 1)] = std::stof(parts[i]);
+        }
+
+        image_count++;
+    }
+
+    reset();
+
+    input_file.close();
+}
+
+
+void DatasetFile::next(){
+    current_index++;
+
+    for (int p = 0; p < input_nodes; p++) image[p] = images[current_index * input_nodes + p];
+    for (int p = 0; p < output_nodes; p++) target[p] = labels[current_index * output_nodes + p];
+
+    // for (int p = 0; p < input_nodes; p++) std::cout << image[p] << ' ';
+    // std::cout << '\n';
+    // for (int p = 0; p < output_nodes; p++) std::cout << target[p] << ' ';
+    // std::cout << '\n';
+}
+
+
+void DatasetFile::get(int index){
+    for (int p = 0; p < input_nodes; p++) image[p] = images[index * input_nodes + p];
+    for (int p = 0; p < output_nodes; p++) target[p] = labels[index * output_nodes + p];
+
+    // for (int p = 0; p < input_nodes; p++) std::cout << image[p] << ' ';
+    // std::cout << '\n';
+    // for (int p = 0; p < output_nodes; p++) std::cout << target[p] << ' ';
+    // std::cout << '\n';
+}
+
+
+void DatasetFile::reset(){
+    current_index = 0;
+
+    for (int p = 0; p < input_nodes; p++) image[p] = images[current_index * input_nodes + p];
+    for (int p = 0; p < output_nodes; p++) target[p] = labels[current_index * output_nodes + p];
+}
+
