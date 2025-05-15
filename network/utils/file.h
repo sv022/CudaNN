@@ -64,8 +64,8 @@ DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes
     image = (float*)malloc(input_nodes * sizeof(float));
     target = (float*)malloc(output_nodes * sizeof(float));
 
-    images = (float*)malloc(input_nodes * size *  sizeof(float));
-    labels = (float*)malloc(output_nodes * size *  sizeof(float));
+    images = (float*)malloc(input_nodes * (size + 1) *  sizeof(float));
+    labels = (float*)malloc(output_nodes * (size + 1) *  sizeof(float));
 
     if (path.substr(path.find_last_of(".") + 1) == "csv") 
         LoadDataCSV();

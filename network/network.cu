@@ -1,14 +1,13 @@
 #pragma once
 #include<iostream>
-#include"matrix/matrix.cuh"
 #include<string>
 #include<sstream>
 #include<fstream>
 #include<vector>
+#include"matrix/matrix.cuh"
 #include"utils/progressbar.h"
 #include"utils/utils.h"
 #include"utils/file.h"
-
 
 
 class NeuralNetwork 

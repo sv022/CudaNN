@@ -1,6 +1,6 @@
 #pragma once
-#include <string>
-#include <ctime>
+#include<string>
+#include<ctime>
 #include <sys/stat.h>
 
 std::string get_current_datetime_simple() {

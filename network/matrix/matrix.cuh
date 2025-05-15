@@ -2,7 +2,6 @@
 #include <vector>
 
 
-
 #ifndef KERNEL_H
 #define KERNEL_H 
 namespace Kernel {

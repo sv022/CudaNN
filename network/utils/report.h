@@ -1,5 +1,6 @@
-#include <fstream>
-#include <string>
+#pragma once
+#include<fstream>
+#include<string>
 #include"utils.h"
 
 
@@ -77,7 +78,10 @@ void save_report(
     file << json_content;
 
     if (!file.good()) {
-        return;
+        std::cout << "Failed to save " << filename << '\n';
+        char press_to_continue;
+        std::cin >> press_to_continue;
+        exit(1);
     }
 }
 
@@ -136,6 +140,9 @@ void save_report(
     file << json_content;
 
     if (!file.good()) {
-        return;
+        std::cout << "Failed to save " << filename << '\n';
+        char press_to_continue;
+        std::cin >> press_to_continue;
+        exit(1);
     }
 }

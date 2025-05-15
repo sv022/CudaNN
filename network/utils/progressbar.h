@@ -1,8 +1,8 @@
 #pragma once
-#include <iostream>
-#include <vector>
-#include <stdio.h>
-#include <string>
+#include<iostream>
+#include<vector>
+#include<stdio.h>
+#include<string>
 #include<chrono>
 
 class ProgressBar
