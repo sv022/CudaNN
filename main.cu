@@ -4,7 +4,39 @@
 #include <iostream>
 #include <cstdlib>
 
+
+bool isCudaDeviceAvailable() {
+    int deviceCount = 0;
+    cudaError_t error = cudaGetDeviceCount(&deviceCount);
+    
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(error) << '\n';
+        return false;
+    }
+    
+    if (deviceCount == 0) {
+        std::cerr << "No CUDA-capable devices found" << '\n';
+        return false;
+    }
+    
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+    
+    if (deviceProp.major < 1) {
+        std::cerr << "Device does not support CUDA" << '\n';
+        return false;
+    }
+    
+    return true;
+}
+
+
 int main(int argc, char* argv[]) {
+    if (!isCudaDeviceAvailable()) {
+        std::cerr << "CUDA device not available, exiting..." << '\n';
+        return 1;
+    }
+
     if (argc == 12) {
         const int input_nodes = std::stoi(argv[1]);
         int hidden_nodes = std::stoi(argv[2]);

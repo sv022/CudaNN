@@ -69,9 +69,6 @@ void NeuralNetwork::forward(float *inputs){
     float *d_inputs = 0;
 	float *d_hidden_inputs = 0;
     float *d_hidden_outputs;
-
-    // Matrix::log_static(wih, hidden_nodes, input_nodes);
-    // Matrix::log_static(inputs, input_nodes, 1);
     
 	cudaMalloc(&d_wih, input_nodes * hidden_nodes * sizeof(float));
 	cudaMalloc(&d_inputs, 1 * input_nodes * sizeof(float));
@@ -119,8 +116,6 @@ void NeuralNetwork::forward(float *inputs){
     cudaDeviceSynchronize();
 
     Kernel::map<<<activationsHiddenBlocksPerGrid, THREADS>>>(d_hidden_inputs, d_hidden_outputs, 1, hidden_nodes);
-
-    // Matrix::log_static(hidden_inputs, hidden_nodes, 1);
     
     cudaMemcpy(
         hidden_outputs,
@@ -185,8 +180,6 @@ void NeuralNetwork::forward(float *inputs){
     cudaDeviceSynchronize();
 
     Kernel::map<<<activationsOutputBlocksPerGrid, THREADS>>>(d_final_inputs, d_output, 1, output_nodes);
-
-    // Matrix::log_static(final_inputs, output_nodes, 1);
     
     cudaMemcpy(
         output,
@@ -199,8 +192,6 @@ void NeuralNetwork::forward(float *inputs){
     cudaFree(d_hidden_outputs);
     cudaFree(d_final_inputs);
     cudaFree(d_output);
-
-    cudaDeviceSynchronize();
 
     // Matrix::log_static(output, output_nodes, 1);
 }
@@ -280,8 +271,6 @@ bool NeuralNetwork::train(float *inputs, float *targets){
         hidden_nodes * sizeof(float),
         cudaMemcpyDeviceToHost
     );
-
-    // Matrix::log_static(hidden_errors, hidden_nodes, 1);
 
     cudaFree(d_who);
     cudaFree(d_who_T);
@@ -543,7 +532,6 @@ int NeuralNetwork::predict(float *input){
 float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets, int* test_guesses) {
     DatasetFile test_file(filePath, data_size, input_nodes, output_nodes);
 
-	// bool debug = true;
 	int correctGuesses = 0;
 
     std::cout << "Data " << filePath << " loaded. Starting testing..." << '\n';
@@ -552,9 +540,7 @@ float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets
 		int result = predict(test_file.image);
         int test_target = getMaxActivationIndex(test_file.target);
 
-		if(result == test_target) correctGuesses++; 
-
-		// if (debug) std::cout << test_target << " guess: " << result << '\n';
+		if (result == test_target) correctGuesses++; 
 
         test_targets[i] = test_target;
         test_guesses[i] = result;
