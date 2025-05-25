@@ -14,6 +14,7 @@
 output/
 runs/
 predict/
+dev/
 test.cpp
 test.cu
 *_test.cu
