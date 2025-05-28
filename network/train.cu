@@ -15,7 +15,7 @@ void train(
     bool save_weights,
     std::string current_directory
 ) {
-    NeuralNetwork n(input_nodes, hidden_nodes, output_nodes, learning_rate);
+    NeuralNetwork n(learning_rate);
 
     float* accuracy_history = (float*)malloc(sizeof(float) * epochs);
 

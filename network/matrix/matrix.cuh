@@ -1,3 +1,4 @@
+#pragma once
 #include <iostream>
 #include <vector>
 
@@ -7,6 +8,7 @@
 namespace Kernel {
     // Kernel functions
     __global__ void dot(float *a, float *b, float *c, int N, int M, int P);
+    __global__ void dot_softmax(float *a, float *b, float *c, int N, int M, int P);
     __global__ void add(float *a, float *b, float *c, int R, int C);
     __global__ void multadd(float *a, float *b, float *c, int R, int C, float k);
     __global__ void sub(float *a, float *b, float *c, int R, int C);
@@ -188,6 +190,26 @@ __global__ void Kernel::dot(
             sum += a[row * N + k] * b[k * P + col];
         }
         c[row * P + col] = sum;
+    }
+}
+__global__ void Kernel::dot_softmax(
+    float *a,
+    float *b,
+    float *c,
+    int M,
+    int N,
+    int P
+) {
+
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < M && col < P) {
+        float sum = 0.0f;
+        for (int k = 0; k < N; k++) {
+            sum += a[row * N + k] * b[k * P + col];
+        }
+        c[row * P + col] = activation_function(sum);
     }
 }
 __global__ void Kernel::map(float *input, float *output, int rows, int cols) {

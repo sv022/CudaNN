@@ -12,7 +12,7 @@ void predict(
     std::string weights_path,
     std::string current_directory
 ){
-    NeuralNetwork n(input_nodes, hidden_nodes, output_nodes, 0.01);
+    NeuralNetwork n(0.01);
 
     n.load_weights(weights_path);
 
