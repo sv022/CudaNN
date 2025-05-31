@@ -1,5 +1,5 @@
 #include<string>
-#include"network.cu"
+#include"network_test.cu"
 #include"utils/report.h"
 
 void train(
@@ -16,6 +16,8 @@ void train(
     std::string current_directory
 ) {
     NeuralNetwork n(learning_rate);
+    n.add_layer(new Dense(input_nodes, hidden_nodes));
+    n.add_layer(new Dense(hidden_nodes, output_nodes));
 
     float* accuracy_history = (float*)malloc(sizeof(float) * epochs);
 
@@ -23,16 +25,15 @@ void train(
 
     std::string saved_weights_filename = "";
 
-    if (save_weights) {
-        saved_weights_filename = current_directory + "/runs/" + get_current_datetime_simple() + "_neuron.weights.bin";
-        n.save_weights(saved_weights_filename);
-    }
+    // if (save_weights) {
+    //     saved_weights_filename = current_directory + "/runs/" + get_current_datetime_simple() + "_neuron.weights.bin";
+    //     n.save_weights(saved_weights_filename);
+    // }
 
     int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
 
     float accuracy = n.test(test_data, test_data_size, test_targets, test_guesses);
-    
     
     save_report(
         current_directory,
