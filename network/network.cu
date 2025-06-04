@@ -80,8 +80,6 @@ void NeuralNetwork::forward(float *inputs){
 
 
 bool NeuralNetwork::backward(float *inputs, float *targets){
-    forward(inputs);
-
     int _guess = getMaxActivationIndex(layers.back()->outputs);
     int _target = getMaxActivationIndex(targets);
 
@@ -144,6 +142,7 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, float* ac
         int totalCorrect = 0;
 
         for (int i = 0; i < data_size; i++){
+            forward(train_file.image);
             bool isCorrent = backward(train_file.image, train_file.target);
             if (isCorrent) totalCorrect++;
             
