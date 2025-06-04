@@ -4,29 +4,31 @@
 
 
 void predict(
-    int input_nodes,
-    int hidden_nodes,
-    int output_nodes,
+    int layer_count,
+    int* layers,
     int test_data_size,
     std::string test_data,
     std::string weights_path,
     std::string current_directory
 ){
-    NeuralNetwork n(input_nodes, hidden_nodes, output_nodes, 0.01);
+    NeuralNetwork model(0.01);
+    for (int i = 0; i < layer_count - 1; i++) {
+        model.add_layer(new Dense(layers[i], layers[i + 1]));
+    }
 
-    n.load_weights(weights_path);
+    model.load_weights(weights_path);
 
     int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
 
-    
-    float accuracy = n.test(test_data, test_data_size, test_targets, test_guesses);
+    float accuracy = model.test(test_data, test_data_size, test_targets, test_guesses);
 
-    save_report(
+    // TODO
+    save_report( 
         current_directory,
-        input_nodes,
-        hidden_nodes,
-        output_nodes,
+        0,
+        0,
+        0,
         test_data_size,
         accuracy,
         test_targets,

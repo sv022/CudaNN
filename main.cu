@@ -5,6 +5,10 @@
 #include <cstdlib>
 
 
+#define TRAIN 1
+#define TEST 0
+
+
 bool isCudaDeviceAvailable() {
     int deviceCount = 0;
     cudaError_t error = cudaGetDeviceCount(&deviceCount);
@@ -31,31 +35,59 @@ bool isCudaDeviceAvailable() {
 }
 
 
+void log_arg_error(std::string arg){
+    std::cerr << "Usage: " << arg << " "
+        << "<mode (TRAIN = 1; TEST = 0)> <layer_count> <*layers> "
+        << "<learning_rate> <epochs> <train_data_size> <test_data_size> "
+        << "<train_data_path> <test_data_path> <save_weights> <current_dir>\n";
+}
+
+
 int main(int argc, char* argv[]) {
     if (!isCudaDeviceAvailable()) {
         std::cerr << "CUDA device not available, exiting..." << '\n';
         return 1;
     }
 
-    if (argc == 12) {
-        const int input_nodes = std::stoi(argv[1]);
-        int hidden_nodes = std::stoi(argv[2]);
-        const int output_nodes = std::stoi(argv[3]);
-        float learning_rate = std::stof(argv[4]);
-        int epochs = std::stoi(argv[5]);
-        int train_data_size = std::stoi(argv[6]);
-        int test_data_size = std::stoi(argv[7]);
+    if (argc < 3) {
+        log_arg_error(argv[0]);
+        return 1;
+    }
+
+    const int mode = std::stoi(argv[1]);
+    if ((mode != TRAIN) && (mode != TEST)) {
+        log_arg_error(argv[0]);
+        return 1;
+    }
+
+    const int layer_count = std::stoi(argv[2]);
+    if (layer_count < 2) {
+        std::cerr << "Invalid layer number: " << layer_count << ". Add at least 2 layers to compile model." << '\n';
+        return 1;
+    }
+    int layer = 0;
+    int* layers = (int*)malloc(sizeof(int) * layer_count);
+    while (layer < layer_count) {
+        layers[layer] = std::stoi(argv[layer + 3]);
+        layer++;
+    }
+
     
-        std::string train_data = argv[8];
-        std::string test_data = argv[9];
-        bool save_weights = std::stoi(argv[10]);
-    
-        std::string current_directory = argv[11];
+    if (mode == TRAIN) {
+        float learning_rate = std::stof(argv[3 + layer_count]);
+        int epochs = std::stoi(argv[4 + layer_count]);
+        int train_data_size = std::stoi(argv[5 + layer_count]);
+        int test_data_size = std::stoi(argv[6 + layer_count]);
+        
+        std::string train_data = argv[7 + layer_count];
+        std::string test_data = argv[8 + layer_count];
+        bool save_weights = std::stoi(argv[9 + layer_count]);
+        
+        std::string current_directory = argv[10 + layer_count];
 
         train(
-            input_nodes,
-            hidden_nodes,
-            output_nodes,
+            layer_count,
+            layers,
             learning_rate,
             epochs,
             train_data_size,
@@ -66,37 +98,24 @@ int main(int argc, char* argv[]) {
             current_directory
         );
 
-    } else if (argc == 8) {
-        const int input_nodes = std::stoi(argv[1]);
-        int hidden_nodes = std::stoi(argv[2]);
-        const int output_nodes = std::stoi(argv[3]);
-
-        int test_data_size = std::stoi(argv[4]);
-        std::string test_data = argv[5];
+    } else {
+        int test_data_size = std::stoi(argv[3 + layer_count]);
+        std::string test_data = argv[4 + layer_count];
         
-        std::string weights_path = argv[6];
+        std::string weights_path = argv[5 + layer_count];
 
-        std::string current_directory = argv[7];
+        std::string current_directory = argv[6 + layer_count];
 
         predict(
-            input_nodes,
-            hidden_nodes,
-            output_nodes,
+            layer_count,
+            layers,
             test_data_size,
             test_data,
             weights_path,
             current_directory
         );
-
-    } else {
-        std::cerr << "Usage for train: " << argv[0] << " "
-                  << "<input_nodes> <hidden_nodes> <output_nodes> <learning_rate> "
-                  << "<epochs> <train_data_size> <test_data_size> "
-                  << "<train_data_path> <test_data_path> <save_weights> <current_dir>\n";
-        std::cerr << "Usage for predict: " << argv[0] << " "
-                  << "<input_nodes> <hidden_nodes> <output_nodes> "
-                  << "<test_data_size> <test_data_path> "
-                  << "<weights_path> <current_dir>\n";
-        return 1;
     }
+
+    free(layers);
+    return 0;
 }
