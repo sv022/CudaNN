@@ -34,8 +34,8 @@ private:
     void train(std::string data, int data_size, int epochs, float* accuracy_by_epoch);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
-    // void save_weights(std::string filename);
-    // void load_weights(std::string filename);
+    void save_weights(std::string filename) {};
+    void load_weights(std::string filename) {};
 };
 
 NeuralNetwork::NeuralNetwork(float lr) {
