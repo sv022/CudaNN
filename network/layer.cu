@@ -1,5 +1,6 @@
 #pragma once
 #include "matrix/matrix.cuh"
+#include<fstream>
 
 
 class Layer
@@ -11,6 +12,8 @@ class Layer
     float *outputs;
 
     virtual void forward(float *inputs) {};
+    virtual void save_weights(std::string path) {};
+    virtual void load_weights(std::string path, int start) {};
 };
 
 
@@ -19,17 +22,16 @@ class Dense : public Layer
     private:
     float *weights;
     float learning_rate = 0.1;
-    void save_weights(int layer_size) {
-        std::ofstream file("dev/Layer" + std::to_string(layer_size) + ".bin", std::ios::binary);
-        file.write(reinterpret_cast<const char*>(weights), sizeof(float) * size * output_size);
-    };
     
     public:
     Dense(int layer_size, int next_size);
     void set_learning_rate(float lr) { learning_rate = lr; };
-
+    
     float* backward(float *inputs, float *targets);
     void forward(float *inputs) override;
+
+    void save_weights(std::string path) override;
+    void load_weights(std::string path, int start) override;
 };
 
 
@@ -37,9 +39,9 @@ Dense::Dense(int layer_size, int next_size){
     size = layer_size;
     output_size = next_size;
 
-    outputs = (float*)malloc(sizeof(float) * next_size);
+    outputs = (float*)malloc(sizeof(float) * output_size);
 
-    weights = (float*)malloc(sizeof(float) * layer_size * next_size);
+    weights = (float*)malloc(sizeof(float) * size * output_size);
     Matrix::initRandomf_static(weights, layer_size, next_size, -1 / sqrt(layer_size), 1 / sqrt(layer_size));
 
     // Matrix::log_static(weights, layer_size, next_size, 'W');
@@ -197,4 +199,21 @@ float* Dense::backward(float *inputs, float *next_errors) {
     free(local_grad);
 
     return prev_errors;
+}
+
+
+void Dense::save_weights(std::string path) {
+    std::ofstream file(path, std::ios::binary | std::ios::app);
+    file.write(reinterpret_cast<const char*>(weights), sizeof(float) * size * output_size);
+}
+
+void Dense::load_weights(std::string path, int start) {
+    std::ifstream file(path, std::ios::binary);
+
+    file.seekg(start, std::ios::beg);
+
+    free(weights);
+    weights = (float*)malloc(sizeof(float) * size * output_size);
+    
+    file.read(reinterpret_cast<char*>(weights), sizeof(float) * size * output_size);
 }

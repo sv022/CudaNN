@@ -26,7 +26,16 @@ void train(
 
     std::string saved_weights_filename = "";
     if (save_weights) {
-        saved_weights_filename = current_directory + "/runs/" + get_current_datetime_simple() + "_neuron.weights.bin";
+        std::string layer_conf_string = "_";
+        int i = 0;
+        while (i < layer_count - 1) {
+            layer_conf_string += std::to_string(layers[i]);
+            layer_conf_string += "-";
+            i++;
+        }
+        layer_conf_string += std::to_string(layers[i]);
+
+        saved_weights_filename = current_directory + "/runs/" + get_current_datetime_simple() + layer_conf_string + ".weights.bin";
         model.save_weights(saved_weights_filename);
     }
 
@@ -38,9 +47,9 @@ void train(
     // TODO
     save_report( 
         current_directory,
-        0,
-        0,
-        0,
+        784,
+        256,
+        10,
         learning_rate,
         epochs,
         train_data_size,

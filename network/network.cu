@@ -34,8 +34,8 @@ private:
     void train(std::string data, int data_size, int epochs, float* accuracy_by_epoch);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
-    void save_weights(std::string filename) {};
-    void load_weights(std::string filename) {};
+    void save_weights(std::string path);
+    void load_weights(std::string path);
 };
 
 NeuralNetwork::NeuralNetwork(float lr) {
@@ -218,4 +218,27 @@ int NeuralNetwork::predict(float *input){
     forward(input);
     int prediction = getMaxActivationIndex(layers.back()->outputs);
     return prediction;
+}
+
+
+void NeuralNetwork::save_weights(std::string path) {
+    for (auto &layer : layers) {
+        layer->save_weights(path);
+    }
+}
+
+void NeuralNetwork::load_weights(std::string path) {
+    if (!check_file_exists(path)) {
+        std::cout << "Failed to load weights " << path << ". Press any key to continue...";
+        char press_to_continue;
+        std::cin >> press_to_continue;
+        exit(1);
+    }
+
+    int bytes_to_skip = 0;
+
+    for (auto &layer : layers) {
+        layer->load_weights(path, bytes_to_skip);
+        bytes_to_skip += sizeof(float) * layer->size * layer->output_size;
+    }
 }

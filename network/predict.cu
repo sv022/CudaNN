@@ -26,9 +26,9 @@ void predict(
     // TODO
     save_report( 
         current_directory,
-        0,
-        0,
-        0,
+        784,
+        256,
+        10,
         test_data_size,
         accuracy,
         test_targets,
