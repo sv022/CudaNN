@@ -36,10 +36,14 @@ bool isCudaDeviceAvailable() {
 
 
 void log_arg_error(std::string arg){
-    std::cerr << "Usage: " << arg << " "
-        << "<mode (TRAIN = 1; TEST = 0)> <layer_count> <*layers> "
+    std::cerr << "Usage for mode TRAIN = 1: " << arg << " "
+        << "<mode> <layer_count> <*layers> "
         << "<learning_rate> <epochs> <train_data_size> <test_data_size> "
         << "<train_data_path> <test_data_path> <save_weights> <current_dir>\n";
+    std::cerr << "Usage for mode TEST = 0: " << arg << " "
+        << "<mode> <layer_count> <*layers> "
+        << "<test_data_size> <test_data_path> "
+        << "<weights_path> <current_dir>\n";
 }
 
 
