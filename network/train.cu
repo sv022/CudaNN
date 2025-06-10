@@ -47,9 +47,8 @@ void train(
     // TODO
     save_report( 
         current_directory,
-        784,
-        256,
-        10,
+        layer_count,
+        layers,
         learning_rate,
         epochs,
         train_data_size,

@@ -6,9 +6,8 @@
 
 void save_report(
     std::string current_directory,
-    int input_nodes,
-    int hidden_nodes,
-    int output_nodes,
+    int layer_count,
+    int* layers,
     float learning_rate,
     int epochs,
     int train_data_size,
@@ -25,6 +24,15 @@ void save_report(
         std::cin >> press_to_continue;
         exit(1);
     }
+
+    std::string json_layers = "[";
+
+    for (int i = 0; i < layer_count; ++i) {
+        if (i > 0) json_layers += ", ";
+        json_layers += std::to_string(layers[i]);
+    }
+
+    json_layers += "]";
 
     std::string json_test_targets = "[";
     std::string json_test_guesses = "[";
@@ -53,9 +61,8 @@ void save_report(
     
     std::string json_content = 
         "{\n"
-        "    \"inputNodes\": " + std::to_string(input_nodes) + ",\n"
-        "    \"hiddenNodes\": " + std::to_string(hidden_nodes) + ",\n"
-        "    \"outputNodes\": " + std::to_string(output_nodes) + ",\n"
+        "    \"layerCount\": " + std::to_string(layer_count) + ",\n"
+        "    \"layers\": " + json_layers + ",\n"
         "    \"learningRate\": " + std::to_string(learning_rate) + ",\n"
         "    \"epochs\": " + std::to_string(epochs) + ",\n"
         "    \"trainDataSize\": " + std::to_string(train_data_size) + ",\n"
@@ -87,9 +94,8 @@ void save_report(
 
 void save_report(
     std::string current_directory,
-    int input_nodes,
-    int hidden_nodes,
-    int output_nodes,
+    int layer_count,
+    int* layers,
     int test_data_size,
     float test_accuracy,
     int* test_targets,
@@ -101,6 +107,15 @@ void save_report(
         std::cin >> press_to_continue;
         exit(1);
     }
+
+    std::string json_layers = "[";
+
+    for (int i = 0; i < layer_count; ++i) {
+        if (i > 0) json_layers += ", ";
+        json_layers += std::to_string(layers[i]);
+    }
+
+    json_layers += "]";
     
     std::string json_test_targets = "[";
     std::string json_test_guesses = "[";
@@ -120,9 +135,8 @@ void save_report(
     
     std::string json_content = 
         "{\n"
-        "    \"inputNodes\": " + std::to_string(input_nodes) + ",\n"
-        "    \"hiddenNodes\": " + std::to_string(hidden_nodes) + ",\n"
-        "    \"outputNodes\": " + std::to_string(output_nodes) + ",\n"
+        "    \"layerCount\": " + std::to_string(layer_count) + ",\n"
+        "    \"layers\": " + json_layers + ",\n"
         "    \"testDataSize\": " + std::to_string(test_data_size) + ",\n"
         "    \"testAccuracy\": " + std::to_string(test_accuracy) + ",\n"
         "    \"testTargets\": " + json_test_targets + ",\n"

@@ -26,15 +26,14 @@ void predict(
     // TODO
     save_report( 
         current_directory,
-        784,
-        256,
-        10,
+        layer_count,
+        layers,
         test_data_size,
         accuracy,
         test_targets,
         test_guesses
     );
-
+    
     free(test_targets);
     free(test_guesses);
 }
