@@ -26,7 +26,7 @@ Args for training:
 
 `<current_dir>` is where results will be saved in `./runs` folder.
 
-Args for training:
+Args for testing:
 ```sh
 <mode (TEST=0)> <layer_count> <*layers> <test_data_size> <test_data_path> <weights_path> <current_dir>
 ```
