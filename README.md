@@ -32,6 +32,7 @@ Args for training:
 ```
 
 `<weights_path>` is the path to `.bin` file that contains weights that will be loaded and used in the model.
+
 `<current_dir>` is where results will be saved in `./predict` folder.
 
 Example:
