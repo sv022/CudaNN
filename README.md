@@ -24,7 +24,7 @@ Args for training:
 <mode (TRAIN=1)> <layer_count> <*layers> <learning_rate> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
 ```
 
-`<current_dir>` is where results will be saved in `./runs` folder.
+`<current_dir>` is where results will be saved in `./runs` subdirectory.
 
 Args for testing:
 ```sh
@@ -33,7 +33,7 @@ Args for testing:
 
 `<weights_path>` is the path to `.bin` file that contains weights that will be loaded and used in the model.
 
-`<current_dir>` is where results will be saved in `./predict` folder.
+`<current_dir>` is where results will be saved in `./predict` subdirectory.
 
 Example:
 
