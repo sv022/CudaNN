@@ -8,7 +8,7 @@
 namespace Kernel {
     // Kernel functions
     __global__ void dot(float *a, float *b, float *c, int N, int M, int P);
-    __global__ void dot_softmax(float *a, float *b, float *c, int N, int M, int P);
+    __global__ void dot_bias_softmax(float *a, float *b, float *d, float *c, int N, int M, int P);
     __global__ void add(float *a, float *b, float *c, int R, int C);
     __global__ void multadd(float *a, float *b, float *c, int R, int C, float k);
     __global__ void sub(float *a, float *b, float *c, int R, int C);
@@ -192,9 +192,10 @@ __global__ void Kernel::dot(
         c[row * P + col] = sum;
     }
 }
-__global__ void Kernel::dot_softmax(
+__global__ void Kernel::dot_bias_softmax(
     float *a,
     float *b,
+    float *d,
     float *c,
     int M,
     int N,
@@ -209,7 +210,7 @@ __global__ void Kernel::dot_softmax(
         for (int k = 0; k < N; k++) {
             sum += a[row * N + k] * b[k * P + col];
         }
-        c[row * P + col] = activation_function(sum);
+        c[row * P + col] = activation_function(sum + d[row * P + col]);
     }
 }
 __global__ void Kernel::map(float *input, float *output, int rows, int cols) {
