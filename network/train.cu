@@ -13,6 +13,7 @@ void train(
     std::string train_data,
     std::string test_data,
     bool save_weights,
+    std::string weights_path,
     std::string current_directory
 ) {
     NeuralNetwork model(learning_rate);
@@ -21,6 +22,10 @@ void train(
     }
 
     float* accuracy_history = (float*)malloc(sizeof(float) * epochs);
+
+    if (weights_path != ""){
+        model.load_weights(weights_path);
+    }
 
     model.train(train_data, train_data_size, epochs, accuracy_history);
 

@@ -3,6 +3,7 @@
 #include"network/predict.cu"
 #include <iostream>
 #include <cstdlib>
+#include <stdexcept>
 
 
 #define TRAIN 1
@@ -39,7 +40,7 @@ void log_arg_error(std::string arg){
     std::cerr << "Usage for mode TRAIN = 1: " << arg << " "
         << "<mode> <layer_count> <*layers> "
         << "<learning_rate> <epochs> <train_data_size> <test_data_size> "
-        << "<train_data_path> <test_data_path> <save_weights> <current_dir>\n";
+        << "<train_data_path> <test_data_path> <save_weights> <weights_path> <current_dir>\n";
     std::cerr << "Usage for mode TEST = 0: " << arg << " "
         << "<mode> <layer_count> <*layers> "
         << "<test_data_size> <test_data_path> "
@@ -86,8 +87,17 @@ int main(int argc, char* argv[]) {
         std::string train_data = argv[7 + layer_count];
         std::string test_data = argv[8 + layer_count];
         bool save_weights = std::stoi(argv[9 + layer_count]);
-        
-        std::string current_directory = argv[10 + layer_count];
+
+        std::string weights_path = "";
+        std::string current_directory = "";
+
+        if (argc == 11 + layer_count){
+            weights_path = "";
+            current_directory = argv[10 + layer_count];
+        } else {
+            current_directory = argv[11 + layer_count];
+            weights_path = argv[10 + layer_count];
+        }
 
         train(
             layer_count,
@@ -99,6 +109,7 @@ int main(int argc, char* argv[]) {
             train_data,
             test_data,
             save_weights,
+            weights_path,
             current_directory
         );
 
