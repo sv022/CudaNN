@@ -1,5 +1,6 @@
 #pragma once
 #include "matrix/matrix.cuh"
+#include "matrix/coarse_1d.cuh"
 #include<fstream>
 
 
@@ -172,7 +173,7 @@ float* Dense::backward(float *inputs, float *next_errors) {
         (in_size + THREADS.y - 1) / THREADS.y
     );
 
-    Kernel::dot<<<BLOCKS, THREADS>>>(d_inputs, d_local_grad, d_weight_grad, in_size, 1, out_size);
+    coarse_1d_xgemm(d_inputs, d_local_grad, d_weight_grad, in_size, out_size, 1);
     cudaDeviceSynchronize();
 
     Kernel::multadd<<<BLOCKS, THREADS>>>(d_weights, d_weight_grad, d_updated_weights, in_size, out_size, learning_rate);
@@ -197,7 +198,7 @@ float* Dense::backward(float *inputs, float *next_errors) {
         (in_size + THREADS.x - 1) / THREADS.x,
         1
     );
-    Kernel::dot<<<ERROR_BLOCKS, THREADS>>>(d_local_grad, d_weights_T, d_prev_errors, 1, out_size, in_size);
+    coarse_1d_xgemm(d_local_grad, d_weights_T, d_prev_errors, 1, in_size, out_size);
     cudaDeviceSynchronize();
 
     free(weights);
