@@ -188,16 +188,12 @@ void DatasetFile::LoadDataCSV() {
 }
 
 
-void DatasetFile::next(){
-    current_index++;
+void DatasetFile::next() {
+    current_index = (current_index + 1) % size;
+    const size_t offset = current_index * input_nodes;
 
-    for (int p = 0; p < input_nodes; p++) image[p] = images[current_index * input_nodes + p];
-    for (int p = 0; p < output_nodes; p++) target[p] = labels[current_index * output_nodes + p];
-
-    // for (int p = 0; p < input_nodes; p++) std::cout << image[p] << ' ';
-    // std::cout << '\n';
-    // for (int p = 0; p < output_nodes; p++) std::cout << target[p] << ' ';
-    // std::cout << '\n';
+    memcpy(image, images + offset, input_nodes * sizeof(float));
+    memcpy(target, labels + offset * output_nodes / input_nodes, output_nodes * sizeof(float));
 }
 
 
