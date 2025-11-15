@@ -8,7 +8,7 @@
 #include"utils/progressbar.h"
 #include"utils/utils.h"
 #include"utils/file.h"
-#include"layer.cu"
+#include"dense.cu"
 
 
 class NeuralNetwork 
