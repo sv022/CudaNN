@@ -9,6 +9,7 @@
 #include"utils/utils.h"
 #include"utils/file.h"
 #include"dense.cu"
+#include"conv.cu"
 
 
 class NeuralNetwork 
@@ -27,6 +28,7 @@ private:
 
     NeuralNetwork(float lr);
     void add_layer(Dense* Layer);
+    void add_layer(Conv* Layer);
 
     void forward(float *inputs);
     bool backward(float *inputs, float *targets);
@@ -61,6 +63,22 @@ void NeuralNetwork::add_layer(Dense* layer){
     output_nodes = layer->output_size;
 }
 
+void NeuralNetwork::add_layer(Conv* layer){
+    if (layers.size() == 0) {
+        layers.push_back(layer);
+        input_nodes = layer->size;
+        output_nodes = layer->output_size;
+        return;
+    }
+    if (layer->size != layers.back()->output_size) {
+        std::cout << "Unmatched layer " << layers.size() + 1 << " dim: " << layer->size << ' ' << "(expected " << layers.back()->output_size << ")" << '\n';
+        exit(1);
+    }
+
+    layers.push_back(layer);
+    output_nodes = layer->output_size;
+}
+
 
 void NeuralNetwork::forward(float *inputs){
     float *layer_inputs;
@@ -75,7 +93,7 @@ void NeuralNetwork::forward(float *inputs){
     }
     
     Layer* out_layer = layers.back();
-    // Matrix::log_static(out_layer->outputs, 1, output_nodes, 'O');
+    Matrix::log_static(out_layer->outputs, 1, output_nodes, 'O');
 }
 
 
