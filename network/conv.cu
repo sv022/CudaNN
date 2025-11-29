@@ -1,4 +1,5 @@
 #include"layer.cu"
+#include"convolution/convolution_shared_memory.cuh"
 
 
 class Conv : public Layer
@@ -17,9 +18,12 @@ class Conv : public Layer
 
     float *kernels;
     float *biases;
+    float learning_rate = 0.1;
     
     public:
     Conv(int input_height, int input_width, int channels, int kernel_size, int n_kernels = 1, int stride = 1, int padding = 0);
+
+    void set_learning_rate(float lr) { learning_rate = lr; };
     
     float* backward(float *inputs, float *targets);
     void forward(float *inputs) override;
@@ -60,44 +64,49 @@ Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, in
     // Matrix::log_static(biases, 1, num_kernels, 'B');
 }
 
-void Conv::forward(float *inputs) {
-    memset(outputs, 0, sizeof(float) * output_size);
+void Conv::forward(float* inputs)
+{
+    int input_size  = channels * input_height * input_width;
+    int kernel_size_total = num_kernels * channels * kernel_size * kernel_size;
+    int output_size_total = num_kernels * output_height * output_width;
 
-    for (int n = 0; n < num_kernels; n++)
-    {
-        for (int i = 0; i < output_height; i++)
-        {
-            for (int j = 0; j < output_width; j++)
-            {
-                float sum = biases[n];
+    float *d_inputs, *d_kernels, *d_biases, *d_outputs;
 
-                int in_y_origin = i * stride - padding;
-                int in_x_origin = j * stride - padding;
+    cudaMalloc(&d_inputs,  input_size * sizeof(float));
+    cudaMalloc(&d_kernels, kernel_size_total * sizeof(float));
+    cudaMalloc(&d_biases,  num_kernels * sizeof(float));
+    cudaMalloc(&d_outputs, output_size_total * sizeof(float));
 
-                for (int c = 0; c < channels; c++)
-                {
-                    for (int u = 0; u < kernel_size; u++)
-                    {
-                        for (int v = 0; v < kernel_size; v++)
-                        {
-                            int in_y = in_y_origin + u;
-                            int in_x = in_x_origin + v;
+    cudaMemcpy(d_inputs,  inputs,  input_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_kernels, kernels, kernel_size_total * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_biases,  biases, num_kernels * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemset(d_outputs, 0, output_size_total * sizeof(float));
 
-                            if (in_y < 0 || in_y >= input_height || in_x < 0 || in_x >= input_width)
-                                continue;
+    dim3 BLOCK(BLOCK_W, BLOCK_H);
+    dim3 GRID(
+        (output_width + BLOCK_W - 1) / BLOCK_W,
+        (output_height + BLOCK_H - 1) / BLOCK_H,
+        num_kernels
+    );
 
-                            float val = inputs[c * input_height * input_width + in_y * input_width + in_x];
-                            float w = kernels[
-                                n * (channels*kernel_size*kernel_size) + c * (kernel_size*kernel_size) + u * kernel_size + v
-                            ];
-                            sum += val * w;
-                        }
-                    }
-                }
+    int tileH = BLOCK_H + kernel_size - 1;
+    int tileW = BLOCK_W + kernel_size - 1;
+    size_t SHMEM = sizeof(float) * (channels * tileH * tileW);
 
-                outputs[n * (output_height*output_width) + i * output_width + j] = sum;
-            }
-        }
-    }
-    // Matrix::log_static(outputs, 1, output_size, 'C');
+    conv_kernel_shared<<<GRID, BLOCK, SHMEM>>>(
+        d_inputs, d_kernels, d_biases, d_outputs,
+        channels, input_height, input_width, 
+        kernel_size, stride, padding, 
+        num_kernels, output_height, output_width
+    );
+
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(outputs, d_outputs, output_size_total * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_inputs);
+    cudaFree(d_kernels);
+    cudaFree(d_biases);
+    cudaFree(d_outputs);
 }
+
