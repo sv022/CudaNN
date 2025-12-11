@@ -13,6 +13,7 @@ class Layer
     float *outputs;
 
     virtual void forward(float *inputs) {};
+    virtual float* backward(float *inputs, float *next_errors) = 0;
     virtual void save_weights(std::string path) {};
     virtual void load_weights(std::string path, int start) {};
 };

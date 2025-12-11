@@ -110,22 +110,15 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
         output_errors[i] = targets[i] - output[i];
     }
 
-    // Matrix::log_static(output_errors, 1, output_nodes, 'E');
+    Matrix::log_static(output_errors, 1, output_nodes, 'E');
 
     float *current_errors = output_errors;
 
     for (int i = num_layers - 1; i >= 0; --i) {
-        Dense *dense_layer = dynamic_cast<Dense*>(layers[i]);
 
-        float *layer_input = nullptr;
-        if (i == 0) {
-            layer_input = inputs;
-        } else {
-            layer_input = layers[i - 1]->outputs;
-        }
+        float *layer_input = (i == 0) ? inputs : layers[i - 1]->outputs;
 
-        float *prev_errors = dense_layer->backward(layer_input, current_errors);
-        // Matrix::log_static(prev_errors, 1, dense_layer->size);
+        float *prev_errors = layers[i]->backward(layer_input, current_errors);
 
         if (i != num_layers - 1) {
             free(current_errors);
