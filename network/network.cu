@@ -10,6 +10,7 @@
 #include"utils/file.h"
 #include"dense.cu"
 #include"conv.cu"
+#include"maxpooling.cu"
 
 
 class NeuralNetwork 
@@ -27,8 +28,7 @@ private:
     // bool train(float *inputs, float *targets);
 
     NeuralNetwork(float lr);
-    void add_layer(Dense* Layer);
-    void add_layer(Conv* Layer);
+    void add_layer(Layer* Layer);
 
     void forward(float *inputs);
     bool backward(float *inputs, float *targets);
@@ -46,7 +46,7 @@ NeuralNetwork::NeuralNetwork(float lr) {
     output_nodes = 0;
 }
 
-void NeuralNetwork::add_layer(Dense* layer){
+void NeuralNetwork::add_layer(Layer* layer){
     layer->set_learning_rate(learning_rate);
     if (layers.size() == 0) {
         layers.push_back(layer);
@@ -63,23 +63,6 @@ void NeuralNetwork::add_layer(Dense* layer){
     output_nodes = layer->output_size;
 }
 
-void NeuralNetwork::add_layer(Conv* layer){
-    if (layers.size() == 0) {
-        layers.push_back(layer);
-        input_nodes = layer->size;
-        output_nodes = layer->output_size;
-        return;
-    }
-    if (layer->size != layers.back()->output_size) {
-        std::cout << "Unmatched layer " << layers.size() + 1 << " dim: " << layer->size << ' ' << "(expected " << layers.back()->output_size << ")" << '\n';
-        exit(1);
-    }
-
-    layers.push_back(layer);
-    output_nodes = layer->output_size;
-}
-
-
 void NeuralNetwork::forward(float *inputs){
     float *layer_inputs;
     layer_inputs = (float*)malloc(sizeof(float) * layers[0]->size);
@@ -91,9 +74,6 @@ void NeuralNetwork::forward(float *inputs){
         layer_inputs = (float*)malloc(sizeof(float) * layer->output_size);
         for (int i = 0; i < layer->output_size; i++) layer_inputs[i] = layer->outputs[i];
     }
-    
-    Layer* out_layer = layers.back();
-    Matrix::log_static(out_layer->outputs, 1, output_nodes, 'O');
 }
 
 
@@ -110,8 +90,6 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
         output_errors[i] = targets[i] - output[i];
     }
 
-    Matrix::log_static(output_errors, 1, output_nodes, 'E');
-
     float *current_errors = output_errors;
 
     for (int i = num_layers - 1; i >= 0; --i) {
@@ -126,8 +104,6 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
 
         current_errors = prev_errors;
     }
-
-    // Matrix::log_static(output, 1, output_nodes, 'O');
 
     free(current_errors);
     free(output_errors);
