@@ -18,13 +18,10 @@ class Conv : public Layer
 
     float *kernels;
     float *biases;
-    float learning_rate = 0.1;
     
     public:
     Conv(int input_height, int input_width, int channels, int kernel_size, int n_kernels = 1, int stride = 1, int padding = 0);
 
-    void set_learning_rate(float lr) { learning_rate = lr; };
-    
     float* backward(float *inputs, float *targets);
     void forward(float *inputs) override;
 

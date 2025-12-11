@@ -10,7 +10,6 @@ class Dense : public Layer
     
     public:
     Dense(int layer_size, int next_size);
-    void set_learning_rate(float lr) { learning_rate = lr; };
     
     float* backward(float *inputs, float *targets);
     void forward(float *inputs) override;
