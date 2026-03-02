@@ -27,6 +27,9 @@ class Conv : public Layer
 
     void save_weights(std::string path) override {};
     void load_weights(std::string path, int start) override {};
+
+    friend void test_conv_forward();
+    friend void test_conv_backward();
 };
 
 
@@ -81,8 +84,8 @@ void Conv::forward(float* inputs)
 
     dim3 BLOCK(16, 16);
     dim3 GRID(
-        (output_width + BLOCK.x - 1) / BLOCK.y,
-        (output_height + BLOCK.x - 1) / BLOCK.y,
+        (output_width + BLOCK.x - 1) / BLOCK.x,
+        (output_height + BLOCK.y - 1) / BLOCK.y,
         num_kernels
     );
 
@@ -158,9 +161,9 @@ float* Conv::backward(float* inputs, float* next_errors) {
 
     dim3 THREADS(16, 16);
     dim3 grid(
-        (output_width + THREADS.x - 1) / THREADS.x, 
-        (output_height + THREADS.y - 1) / THREADS.y, 
-        num_kernels 
+        (output_width + THREADS.x - 1) / THREADS.x,
+        (output_height + THREADS.y - 1) / THREADS.y,
+        num_kernels
     );
     dinput_kernel<<<grid, THREADS>>>(
         d_kernels, d_local_grad, d_dInputs,
@@ -179,12 +182,7 @@ float* Conv::backward(float* inputs, float* next_errors) {
 
     cudaDeviceSynchronize();
 
-    free(kernels);
-    kernels = (float*) malloc(sizeof(float) * kernel_total);
     cudaMemcpy(kernels, d_kernels, kernel_total * sizeof(float), cudaMemcpyDeviceToHost);
-
-    free(biases);
-    biases = (float*) malloc(sizeof(float) * num_kernels);
     cudaMemcpy(biases, d_biases, num_kernels * sizeof(float), cudaMemcpyDeviceToHost);
 
     float* prev_errors = (float*) malloc(sizeof(float) * input_size);

@@ -28,6 +28,7 @@ void train(
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
     
     float accuracy = model.test(test_data, test_data_size, test_targets, test_guesses);
+    std::cout << "Final Test Accuracy: " << accuracy * 100.0f << "%" << std::endl;
     
     std::string saved_weights_filename = "";
     if (save_weights) {

@@ -25,6 +25,9 @@ class MaxPooling : public Layer
         free(outputs);
         free(max_indices);
     }
+
+    friend void test_maxpool_forward();
+    friend void test_maxpool_backward();
 };
 
 

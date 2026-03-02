@@ -40,6 +40,8 @@ private:
     void train(std::string data, int data_size, int epochs, float* accuracy_by_epoch);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
+    void log_structure();
+
     void save_weights(std::string path);
     void load_weights(std::string path);
 };
@@ -57,18 +59,19 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure structure) {
         if (layer->layer_type == LayerType::Conv) {
             auto* c = static_cast<ConvStructure*>(layer);
             Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);
+            conv->set_learning_rate(0.01f);
 
             add_layer(conv);
 
         } else if (layer->layer_type == LayerType::Pool) {
             auto* p = static_cast<PoolStructure*>(layer);
             MaxPooling* pool = new MaxPooling(p->input_width, p->input_height, p->channels, p->pool, p->stride);
-
             add_layer(pool);
 
         } else if (layer->layer_type == LayerType::Dense) {
             auto* d = static_cast<DenseStructure*>(layer);
             Dense* dense = new Dense(d->input_nodes,d->output_nodes);
+            dense->set_learning_rate(learning_rate);
 
             add_layer(dense);
 
@@ -79,8 +82,15 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure structure) {
     }
 }
 
+void NeuralNetwork::log_structure() {
+    std::cout << "Layer count: " << layers.size() << std::endl;
+    for (size_t i = 0; i < layers.size(); ++i) {
+        std::cout << "Layer " << i + 1 << ": Size = " << layers[i]->size << ", Output Size = " << layers[i]->output_size << ", Learning Rate = " << layers[i]->learning_rate << std::endl;
+    }
+    std::cout << "Learning Rate: " << learning_rate << std::endl;
+}
+
 void NeuralNetwork::add_layer(Layer* layer){
-    layer->set_learning_rate(learning_rate);
     if (layers.size() == 0) {
         layers.push_back(layer);
         input_nodes = layer->size;
