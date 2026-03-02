@@ -140,7 +140,7 @@ void update_kernels_kernel(float* kernels, const float* dKernels, float lr, int 
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= kernel_total) return;
-    kernels[idx] -= lr * dKernels[idx];
+    kernels[idx] += lr * dKernels[idx];
 }
 
 __global__
@@ -148,5 +148,5 @@ void update_biases_kernel(float* biases, const float* dBiases, float lr, int N)
 {
     int n = blockIdx.x * blockDim.x + threadIdx.x;
     if (n >= N) return;
-    biases[n] -= lr * dBiases[n];
+    biases[n] += lr * dBiases[n];
 }
