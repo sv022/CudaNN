@@ -133,9 +133,7 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
     float *current_errors = output_errors;
 
     for (int i = num_layers - 1; i >= 0; --i) {
-
         float *layer_input = (i == 0) ? inputs : layers[i - 1]->outputs;
-
         float *prev_errors = layers[i]->backward(layer_input, current_errors);
 
         if (i != num_layers - 1) {
