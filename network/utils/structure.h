@@ -1,4 +1,6 @@
+#pragma once
 #include<vector>
+#include<string>
 
 
 enum class LayerType
@@ -85,6 +87,26 @@ struct NetworkStructure
 
     void add_conv(unsigned int input_width, unsigned int input_height, unsigned int channels, unsigned int kernel_size, unsigned int num_kernels, unsigned int stride, unsigned int padding){
         layers.push_back(new ConvStructure(input_width, input_height, channels, kernel_size, num_kernels, stride, padding));
+    }
+
+    std::string get_structure_string() {
+        std::string structure_str;
+        for (auto* layer : layers) {
+            if (layer->layer_type == LayerType::Conv) {
+                auto* conv_layer = static_cast<ConvStructure*>(layer);
+                structure_str += "conv_" + std::to_string(conv_layer->input_width) + "x" + std::to_string(conv_layer->input_height) + "x" + std::to_string(conv_layer->channels) + "_" +
+                                 std::to_string(conv_layer->kernel_size) + "_" + std::to_string(conv_layer->num_kernels) + "_" +
+                                 std::to_string(conv_layer->stride) + "_" + std::to_string(conv_layer->padding) + "-";
+            } else if (layer->layer_type == LayerType::Pool) {
+                auto* pool_layer = static_cast<PoolStructure*>(layer);
+                structure_str += "pool_" + std::to_string(pool_layer->input_width) + "x" + std::to_string(pool_layer->input_height) + "x" + std::to_string(pool_layer->channels) + "_" +
+                                 std::to_string(pool_layer->pool) + "_" + std::to_string(pool_layer->stride) + "-";
+            } else if (layer->layer_type == LayerType::Dense) {
+                auto* dense_layer = static_cast<DenseStructure*>(layer);
+                structure_str += "dense_" + std::to_string(dense_layer->input_nodes) + "_" + std::to_string(dense_layer->output_nodes) + "-";
+            }
+        }
+        return structure_str.empty() ? structure_str : structure_str.substr(0, structure_str.size() - 1); // Remove trailing '-'
     }
 
     ~NetworkStructure(){

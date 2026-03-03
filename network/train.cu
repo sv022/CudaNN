@@ -4,7 +4,7 @@
 
 
 void train(
-    NetworkStructure structure,
+    NetworkStructure &structure,
     int epochs,
     int train_data_size,
     int test_data_size,
@@ -32,9 +32,13 @@ void train(
     
     std::string saved_weights_filename = "";
     if (save_weights) {
-        // TODO
+        std::string structure_str = structure.get_structure_string();
+        saved_weights_filename = current_directory + "/runs/" + structure_str + "-Z" + get_current_datetime_simple() + ".bin";
+        
+        model.save_weights(saved_weights_filename);
+        std::cout << "Weights saved to " << saved_weights_filename << std::endl;
     }
-
+    
     // TODO
     // save_report( 
     //     current_directory,

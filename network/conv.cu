@@ -25,8 +25,8 @@ class Conv : public Layer
     float* backward(float *inputs, float *targets);
     void forward(float *inputs) override;
 
-    void save_weights(std::string path) override {};
-    void load_weights(std::string path, int start) override {};
+    void save_weights(std::string path) override;
+    int load_weights(std::string path, int start) override;
 
     friend void test_conv_forward();
     friend void test_conv_backward();
@@ -199,4 +199,38 @@ float* Conv::backward(float* inputs, float* next_errors) {
     free(local_grad);
 
     return prev_errors;
+}
+
+
+void Conv::save_weights(std::string path) {
+    std::ofstream file(path, std::ios::binary | std::ios::app);
+
+    int kernel_total = num_kernels * channels * kernel_size * kernel_size;
+
+    file.write(reinterpret_cast<const char*>(kernels), sizeof(float) * kernel_total);
+    file.write(reinterpret_cast<const char*>(biases), sizeof(float) * num_kernels);
+
+    file.close();
+}
+
+int Conv::load_weights(std::string path, int start) { // return loaded weights size in bytes
+    std::ifstream file(path, std::ios::binary);
+
+    file.seekg(start, std::ios::beg);
+
+    int kernel_total = num_kernels * channels * kernel_size * kernel_size;
+
+    free(kernels);
+    kernels = (float*)malloc(sizeof(float) * kernel_total);
+    
+    file.read(reinterpret_cast<char*>(kernels), sizeof(float) * kernel_total);
+
+    free(biases);
+    biases = (float*)malloc(sizeof(float) * num_kernels);
+    
+    file.read(reinterpret_cast<char*>(biases), sizeof(float) * num_kernels);
+
+    file.close();
+
+    return kernel_total + num_kernels;
 }

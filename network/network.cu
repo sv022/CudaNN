@@ -263,7 +263,6 @@ void NeuralNetwork::load_weights(std::string path) {
     int bytes_to_skip = 0;
 
     for (auto &layer : layers) {
-        layer->load_weights(path, bytes_to_skip);
-        bytes_to_skip += sizeof(float) * (layer->size * layer->output_size + layer->output_size);
+        bytes_to_skip += sizeof(float) * layer->load_weights(path, bytes_to_skip);
     }
 }

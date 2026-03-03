@@ -19,5 +19,5 @@ class Layer
 
     virtual void set_learning_rate(float lr) { learning_rate = lr; };
     virtual void save_weights(std::string path) {};
-    virtual void load_weights(std::string path, int start) {};
+    virtual int load_weights(std::string path, int start) { return 0; };
 };

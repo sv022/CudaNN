@@ -1,9 +1,9 @@
 #pragma once
 #include"network/train.cu"
 #include"network/predict.cu"
-#include <iostream>
-#include <cstdlib>
-#include <stdexcept>
+#include<iostream>
+#include<cstdlib>
+#include<stdexcept>
 
 
 #define TRAIN 1
@@ -56,12 +56,12 @@ void parse_network_structure(const std::string net_str, float learning_rate, Net
     for (const auto& layer : layers) {
         if (layer.rfind("conv_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
-            auto wh = split(parts[0], 'x');
-            net.add_conv(std::stoi(wh[0]), std::stoi(wh[1]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]), std::stoi(parts[5]));
+            auto whc = split(parts[0], 'x');
+            net.add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]));
         } else if (layer.rfind("pool_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
-            auto wh = split(parts[0], 'x');
-            net.add_pool(std::stoi(wh[0]), std::stoi(wh[1]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]));
+            auto whc = split(parts[0], 'x');
+            net.add_pool(std::stoi(whc[0]), std::stoi(whc[1]), std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]));
         } else if (layer.rfind("dense_", 0) == 0) {
             auto parts = split(layer.substr(6), '_');
             net.add_dense(std::stoi(parts[0]), std::stoi(parts[1]));
