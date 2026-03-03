@@ -1,6 +1,6 @@
 # CUDA Neural Network
 
-Simple fully-connected neural network in CUDA C++. 
+Simple convolutional neural network in CUDA C++. 
 
 ## Table of Contents
 
@@ -19,16 +19,26 @@ nvcc .\main.cu -o network.exe
 
 You can use command line to run the program with given parameters.
 
-Args for training:
+To configure network structure, a `layer_config_string` is used. It contains information about all layers in the network, as well as layers' properties.
+
+Example of a config string with a visualisation:
+
 ```sh
-<mode (TRAIN=1)> <layer_count> <*layers> <learning_rate> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
+conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10
+```
+
+![Network structure visualisation](data/img/conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10.png)
+
+Args list for training:
+```sh
+<mode (TRAIN=1)> <layer_config_string> <learning_rate> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
 ```
 
 `<current_dir>` is where results will be saved in `./runs` subdirectory.
 
-Args for testing:
+Args list for testing:
 ```sh
-<mode (TEST=0)> <layer_count> <*layers> <test_data_size> <test_data_path> <weights_path> <current_dir>
+<mode (TEST=0)> <layer_config_string> <test_data_size> <test_data_path> <weights_path> <current_dir>
 ```
 
 `<weights_path>` is the path to `.bin` file that contains weights that will be loaded and used in the model.
@@ -38,5 +48,5 @@ Args for testing:
 Example:
 
 ```sh
-.\network.exe 1 3 784 256 10 0.2 10 60000 10000 C:/Users/YourUserName/network/mnist_train_60000.csv C:/Users/YourUserName/network/mnist_test_10000.csv 1 C:/Users/YourUserName/network
+.\network.exe 1 "conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10" 0.05 5 60000 10000 C:/Users/YOURUSERNAME/mnist_digits_train_60000.csv C:/Users/YOURUSERNAME/mnist_digits_test_10000.csv 1 - C:/Users/YOURUSERNAME/network
 ```
