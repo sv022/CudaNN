@@ -28,8 +28,6 @@ private:
     int getMaxActivationIndex(float *target);
 
     public:
-    // bool train(float *inputs, float *targets);
-
     NeuralNetwork(float lr);
     NeuralNetwork(const NetworkStructure structure);
     void add_layer(Layer* Layer);
@@ -59,7 +57,6 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure structure) {
         if (layer->layer_type == LayerType::Conv) {
             auto* c = static_cast<ConvStructure*>(layer);
             Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);
-            conv->set_learning_rate(0.01f);
 
             add_layer(conv);
 
@@ -71,7 +68,6 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure structure) {
         } else if (layer->layer_type == LayerType::Dense) {
             auto* d = static_cast<DenseStructure*>(layer);
             Dense* dense = new Dense(d->input_nodes,d->output_nodes);
-            dense->set_learning_rate(learning_rate);
 
             add_layer(dense);
 
@@ -91,6 +87,7 @@ void NeuralNetwork::log_structure() {
 }
 
 void NeuralNetwork::add_layer(Layer* layer){
+    layer->set_learning_rate(learning_rate);
     if (layers.size() == 0) {
         layers.push_back(layer);
         input_nodes = layer->size;
