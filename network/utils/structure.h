@@ -1,0 +1,116 @@
+#pragma once
+#include<vector>
+#include<string>
+
+
+enum class LayerType
+{
+    Conv,
+    Pool,
+    Dense
+};
+
+struct LayerStructure
+{
+    LayerType layer_type;
+    virtual ~LayerStructure() = default;
+};
+
+struct PoolStructure : LayerStructure
+{
+    unsigned int input_width;
+    unsigned int input_height;
+
+    unsigned int channels;
+
+    unsigned int pool;
+    unsigned int stride;
+
+    PoolStructure() : input_width(0), input_height(0), channels(0), pool(0), stride(0) {
+        layer_type = LayerType::Pool;
+    }
+    PoolStructure(int w, int h, int c, int p, int s) : input_width(w), input_height(h), channels(c), pool(p), stride(s) {
+        layer_type = LayerType::Pool;
+    }
+};
+
+
+struct ConvStructure : LayerStructure
+{
+    unsigned int input_width;
+    unsigned int input_height;
+
+    unsigned int channels;
+    unsigned int num_kernels;
+    unsigned int kernel_size;
+
+    unsigned int stride;
+    unsigned int padding;
+
+    ConvStructure() : input_width(0), input_height(0), channels(0), stride(0), padding(0) {
+        layer_type = LayerType::Conv;
+    }
+    ConvStructure(int w, int h, int c, int k, int num_k, int s, int p) : input_width(w), input_height(h), channels(c), kernel_size(k), num_kernels(num_k), stride(s), padding(p) {
+        layer_type = LayerType::Conv;
+    }
+};
+
+
+struct DenseStructure : LayerStructure
+{
+    unsigned int input_nodes;
+    unsigned int output_nodes; 
+
+    DenseStructure() : input_nodes(0), output_nodes(0) {
+        layer_type = LayerType::Dense;
+    }
+    DenseStructure(int i_nodes, int o_nodes) : input_nodes(i_nodes), output_nodes(o_nodes) {
+        layer_type = LayerType::Dense;
+    }
+};
+
+
+struct NetworkStructure
+{
+    std::vector<LayerStructure*> layers;
+    float learning_rate;
+
+    NetworkStructure(float lr = 0.001f): learning_rate(lr) {} 
+
+    void add_dense(unsigned int input_nodes, unsigned int output_nodes) {
+        layers.push_back(new DenseStructure(input_nodes, output_nodes));
+    }
+
+    void add_pool(unsigned int input_width, unsigned int input_height, unsigned int channels, unsigned int pool, unsigned int stride) {
+        layers.push_back(new PoolStructure(input_width, input_height, channels, pool, stride));
+    }
+
+    void add_conv(unsigned int input_width, unsigned int input_height, unsigned int channels, unsigned int kernel_size, unsigned int num_kernels, unsigned int stride, unsigned int padding){
+        layers.push_back(new ConvStructure(input_width, input_height, channels, kernel_size, num_kernels, stride, padding));
+    }
+
+    std::string get_structure_string() {
+        std::string structure_str;
+        for (auto* layer : layers) {
+            if (layer->layer_type == LayerType::Conv) {
+                auto* conv_layer = static_cast<ConvStructure*>(layer);
+                structure_str += "conv_" + std::to_string(conv_layer->input_width) + "x" + std::to_string(conv_layer->input_height) + "x" + std::to_string(conv_layer->channels) + "_" +
+                                 std::to_string(conv_layer->kernel_size) + "_" + std::to_string(conv_layer->num_kernels) + "_" +
+                                 std::to_string(conv_layer->stride) + "_" + std::to_string(conv_layer->padding) + "-";
+            } else if (layer->layer_type == LayerType::Pool) {
+                auto* pool_layer = static_cast<PoolStructure*>(layer);
+                structure_str += "pool_" + std::to_string(pool_layer->input_width) + "x" + std::to_string(pool_layer->input_height) + "x" + std::to_string(pool_layer->channels) + "_" +
+                                 std::to_string(pool_layer->pool) + "_" + std::to_string(pool_layer->stride) + "-";
+            } else if (layer->layer_type == LayerType::Dense) {
+                auto* dense_layer = static_cast<DenseStructure*>(layer);
+                structure_str += "dense_" + std::to_string(dense_layer->input_nodes) + "_" + std::to_string(dense_layer->output_nodes) + "-";
+            }
+        }
+        return structure_str.empty() ? structure_str : structure_str.substr(0, structure_str.size() - 1); // Remove trailing '-'
+    }
+
+    ~NetworkStructure(){
+        for (auto* l : layers) delete l;
+    }
+};
+

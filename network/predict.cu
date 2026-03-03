@@ -4,17 +4,13 @@
 
 
 void predict(
-    int layer_count,
-    int* layers,
+    NetworkStructure structure,
     int test_data_size,
-    std::string test_data,
-    std::string weights_path,
-    std::string current_directory
+    const std::string test_data,
+    const std::string weights_path,
+    const std::string current_directory
 ){
-    NeuralNetwork model(0.01);
-    for (int i = 0; i < layer_count - 1; i++) {
-        model.add_layer(new Dense(layers[i], layers[i + 1]));
-    }
+    NeuralNetwork model(structure);
 
     model.load_weights(weights_path);
 
@@ -23,17 +19,17 @@ void predict(
 
     float accuracy = model.test(test_data, test_data_size, test_targets, test_guesses);
 
-    // TODO
-    save_report( 
-        current_directory,
-        layer_count,
-        layers,
-        test_data_size,
-        accuracy,
-        test_targets,
-        test_guesses
-    );
-    
+    // save_report(
+    //     current_directory,
+    //     structure,          // можно сохранять всю структуру
+    //     test_data_size,
+    //     accuracy,
+    //     test_targets,
+    //     test_guesses
+    // );
+
+    std::cout << "Final Test Accuracy: " << accuracy * 100.0f << "%" << std::endl;
+
     free(test_targets);
     free(test_guesses);
 }

@@ -1,14 +1,19 @@
 #pragma once
 #include<iostream>
-#include"matrix/matrix.cuh"
 #include<string>
 #include<sstream>
 #include<fstream>
 #include<vector>
+
+#include"matrix/matrix.cuh"
 #include"utils/progressbar.h"
 #include"utils/utils.h"
 #include"utils/file.h"
+#include"utils/structure.h"
+
 #include"dense.cu"
+#include"conv.cu"
+#include"maxpooling.cu"
 
 
 class NeuralNetwork 
@@ -23,16 +28,17 @@ private:
     int getMaxActivationIndex(float *target);
 
     public:
-    // bool train(float *inputs, float *targets);
-
     NeuralNetwork(float lr);
-    void add_layer(Dense* Layer);
+    NeuralNetwork(const NetworkStructure structure);
+    void add_layer(Layer* Layer);
 
     void forward(float *inputs);
     bool backward(float *inputs, float *targets);
     int predict(float *input);
     void train(std::string data, int data_size, int epochs, float* accuracy_by_epoch);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
+
+    void log_structure();
 
     void save_weights(std::string path);
     void load_weights(std::string path);
@@ -44,7 +50,43 @@ NeuralNetwork::NeuralNetwork(float lr) {
     output_nodes = 0;
 }
 
-void NeuralNetwork::add_layer(Dense* layer){
+NeuralNetwork::NeuralNetwork(const NetworkStructure structure) {
+    learning_rate = structure.learning_rate;
+
+    for (LayerStructure* layer : structure.layers) {
+        if (layer->layer_type == LayerType::Conv) {
+            auto* c = static_cast<ConvStructure*>(layer);
+            Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);
+
+            add_layer(conv);
+
+        } else if (layer->layer_type == LayerType::Pool) {
+            auto* p = static_cast<PoolStructure*>(layer);
+            MaxPooling* pool = new MaxPooling(p->input_width, p->input_height, p->channels, p->pool, p->stride);
+            add_layer(pool);
+
+        } else if (layer->layer_type == LayerType::Dense) {
+            auto* d = static_cast<DenseStructure*>(layer);
+            Dense* dense = new Dense(d->input_nodes,d->output_nodes);
+
+            add_layer(dense);
+
+        } else {
+            std::cerr << "Unknown layer type in NetworkStructure" << std::endl;
+            std::exit(1);
+        }
+    }
+}
+
+void NeuralNetwork::log_structure() {
+    std::cout << "Layer count: " << layers.size() << std::endl;
+    for (size_t i = 0; i < layers.size(); ++i) {
+        std::cout << "Layer " << i + 1 << ": Size = " << layers[i]->size << ", Output Size = " << layers[i]->output_size << ", Learning Rate = " << layers[i]->learning_rate << std::endl;
+    }
+    std::cout << "Learning Rate: " << learning_rate << std::endl;
+}
+
+void NeuralNetwork::add_layer(Layer* layer){
     layer->set_learning_rate(learning_rate);
     if (layers.size() == 0) {
         layers.push_back(layer);
@@ -61,7 +103,6 @@ void NeuralNetwork::add_layer(Dense* layer){
     output_nodes = layer->output_size;
 }
 
-
 void NeuralNetwork::forward(float *inputs){
     float *layer_inputs;
     layer_inputs = (float*)malloc(sizeof(float) * layers[0]->size);
@@ -73,9 +114,6 @@ void NeuralNetwork::forward(float *inputs){
         layer_inputs = (float*)malloc(sizeof(float) * layer->output_size);
         for (int i = 0; i < layer->output_size; i++) layer_inputs[i] = layer->outputs[i];
     }
-    
-    Layer* out_layer = layers.back();
-    // Matrix::log_static(out_layer->outputs, 1, output_nodes, 'O');
 }
 
 
@@ -92,22 +130,11 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
         output_errors[i] = targets[i] - output[i];
     }
 
-    // Matrix::log_static(output_errors, 1, output_nodes, 'E');
-
     float *current_errors = output_errors;
 
     for (int i = num_layers - 1; i >= 0; --i) {
-        Dense *dense_layer = dynamic_cast<Dense*>(layers[i]);
-
-        float *layer_input = nullptr;
-        if (i == 0) {
-            layer_input = inputs;
-        } else {
-            layer_input = layers[i - 1]->outputs;
-        }
-
-        float *prev_errors = dense_layer->backward(layer_input, current_errors);
-        // Matrix::log_static(prev_errors, 1, dense_layer->size);
+        float *layer_input = (i == 0) ? inputs : layers[i - 1]->outputs;
+        float *prev_errors = layers[i]->backward(layer_input, current_errors);
 
         if (i != num_layers - 1) {
             free(current_errors);
@@ -115,8 +142,6 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
 
         current_errors = prev_errors;
     }
-
-    // Matrix::log_static(output, 1, output_nodes, 'O');
 
     free(current_errors);
     free(output_errors);
@@ -238,7 +263,6 @@ void NeuralNetwork::load_weights(std::string path) {
     int bytes_to_skip = 0;
 
     for (auto &layer : layers) {
-        layer->load_weights(path, bytes_to_skip);
-        bytes_to_skip += sizeof(float) * (layer->size * layer->output_size + layer->output_size);
+        bytes_to_skip += sizeof(float) * layer->load_weights(path, bytes_to_skip);
     }
 }

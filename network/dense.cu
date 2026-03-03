@@ -10,13 +10,12 @@ class Dense : public Layer
     
     public:
     Dense(int layer_size, int next_size);
-    void set_learning_rate(float lr) { learning_rate = lr; };
     
     float* backward(float *inputs, float *targets);
     void forward(float *inputs) override;
 
     void save_weights(std::string path) override;
-    void load_weights(std::string path, int start) override;
+    int load_weights(std::string path, int start) override;
 };
 
 
@@ -237,7 +236,7 @@ void Dense::save_weights(std::string path) {
     file.close();
 }
 
-void Dense::load_weights(std::string path, int start) {
+int Dense::load_weights(std::string path, int start) { // return loaded weights size in bytes
     std::ifstream file(path, std::ios::binary);
 
     file.seekg(start, std::ios::beg);
@@ -253,4 +252,6 @@ void Dense::load_weights(std::string path, int start) {
     file.read(reinterpret_cast<char*>(biases), sizeof(float) * output_size);
 
     file.close();
+
+    return (size * output_size) + output_size;
 }
