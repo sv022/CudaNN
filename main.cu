@@ -48,23 +48,23 @@ void log_arg_error(std::string arg){
 }
 
 
-void parse_network_structure(const std::string net_str, float learning_rate, NetworkStructure& net) {
+void parse_network_structure(const std::string net_str, float learning_rate, NetworkStructure* net) {
     auto layers = split(net_str, '-');
 
-    net.learning_rate = learning_rate;
+    net->learning_rate = learning_rate;
 
     for (const auto& layer : layers) {
         if (layer.rfind("conv_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
             auto whc = split(parts[0], 'x');
-            net.add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]));
+            net->add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]));
         } else if (layer.rfind("pool_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
             auto whc = split(parts[0], 'x');
-            net.add_pool(std::stoi(whc[0]), std::stoi(whc[1]), std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]));
+            net->add_pool(std::stoi(whc[0]), std::stoi(whc[1]), std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]));
         } else if (layer.rfind("dense_", 0) == 0) {
             auto parts = split(layer.substr(6), '_');
-            net.add_dense(std::stoi(parts[0]), std::stoi(parts[1]));
+            net->add_dense(std::stoi(parts[0]), std::stoi(parts[1]));
         } else {
             throw std::runtime_error("Unknown layer type: " + layer);
         }
@@ -89,11 +89,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    NetworkStructure structure;
-    float learning_rate = std::stof(argv[3]);
-    parse_network_structure(argv[2], learning_rate, structure);
-
+    NetworkStructure* structure = new NetworkStructure();
+    
     if (mode == TRAIN) {
+        float learning_rate = std::stof(argv[3]);
+
+        parse_network_structure(argv[2], learning_rate, structure);
+
         int epochs = std::stoi(argv[4]);
         int train_data_size = std::stoi(argv[5]);
         int test_data_size = std::stoi(argv[6]);
@@ -118,6 +120,8 @@ int main(int argc, char* argv[]) {
         );
 
     } else {
+        parse_network_structure(argv[2], 0.0f, structure);
+        
         int test_data_size = std::stoi(argv[3]);
         std::string test_data = argv[4];
         std::string weights_path = argv[5];
@@ -131,6 +135,8 @@ int main(int argc, char* argv[]) {
             current_directory
         );
     }
+
+    free(structure);
 
     return 0;
 }

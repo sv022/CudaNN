@@ -29,7 +29,7 @@ private:
 
     public:
     NeuralNetwork(float lr);
-    NeuralNetwork(const NetworkStructure structure);
+    NeuralNetwork(const NetworkStructure* structure);
     void add_layer(Layer* Layer);
 
     void forward(float *inputs);
@@ -50,10 +50,10 @@ NeuralNetwork::NeuralNetwork(float lr) {
     output_nodes = 0;
 }
 
-NeuralNetwork::NeuralNetwork(const NetworkStructure structure) {
-    learning_rate = structure.learning_rate;
+NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
+    learning_rate = structure->learning_rate;
 
-    for (LayerStructure* layer : structure.layers) {
+    for (LayerStructure* layer : structure->layers) {
         if (layer->layer_type == LayerType::Conv) {
             auto* c = static_cast<ConvStructure*>(layer);
             Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);

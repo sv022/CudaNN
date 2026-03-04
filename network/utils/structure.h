@@ -109,6 +109,42 @@ struct NetworkStructure
         return structure_str.empty() ? structure_str : structure_str.substr(0, structure_str.size() - 1); // Remove trailing '-'
     }
 
+    std::string structure_to_json() {
+        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"layers\": [\n";
+        std::string trailing_comma;
+        for (size_t i = 0; i < layers.size(); ++i) {
+            if (i < layers.size() - 1) trailing_comma = ",";
+            else trailing_comma = "";
+            json += "\t\t{\n";
+            if (layers[i]->layer_type == LayerType::Conv) {
+                auto* conv_layer = static_cast<ConvStructure*>(layers[i]);
+                json += "\t\t\t\"type\": \"conv\",\n";
+                json += "\t\t\t\"input_width\": " + std::to_string(conv_layer->input_width) + ",\n";
+                json += "\t\t\t\"input_height\": " + std::to_string(conv_layer->input_height) + ",\n";
+                json += "\t\t\t\"channels\": " + std::to_string(conv_layer->channels) + ",\n";
+                json += "\t\t\t\"kernel_size\": " + std::to_string(conv_layer->kernel_size) + ",\n";
+                json += "\t\t\t\"num_kernels\": " + std::to_string(conv_layer->num_kernels) + ",\n";
+                json += "\t\t\t\"stride\": " + std::to_string(conv_layer->stride) + ",\n";
+                json += "\t\t\t\"padding\": " + std::to_string(conv_layer->padding) + "\n\t\t}" + trailing_comma + "\n";
+            } else if (layers[i]->layer_type == LayerType::Pool) {
+                auto* pool_layer = static_cast<PoolStructure*>(layers[i]);
+                json += "\t\t\t\"type\": \"pool\",\n";
+                json += "\t\t\t\"input_width\": " + std::to_string(pool_layer->input_width) + ",\n";
+                json += "\t\t\t\"input_height\": " + std::to_string(pool_layer->input_height) + ",\n";
+                json += "\t\t\t\"channels\": " + std::to_string(pool_layer->channels) + ",\n";
+                json += "\t\t\t\"pool\": " + std::to_string(pool_layer->pool) + ",\n";
+                json += "\t\t\t\"stride\": " + std::to_string(pool_layer->stride) + "\n\t\t}" + trailing_comma + "\n";
+            } else if (layers[i]->layer_type == LayerType::Dense) {
+                auto* dense_layer = static_cast<DenseStructure*>(layers[i]);
+                json += "\t\t\t\"type\": \"dense\",\n";
+                json += "\t\t\t\"input_nodes\": " + std::to_string(dense_layer->input_nodes) + ",\n";
+                json += "\t\t\t\"output_nodes\": " + std::to_string(dense_layer->output_nodes) + "\n\t\t}" + trailing_comma + "\n";
+            }
+        }
+        json += "\t]\n}";
+        return json;
+    }
+
     ~NetworkStructure(){
         for (auto* l : layers) delete l;
     }

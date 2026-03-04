@@ -4,7 +4,7 @@
 
 
 void predict(
-    NetworkStructure structure,
+    NetworkStructure* structure,
     int test_data_size,
     const std::string test_data,
     const std::string weights_path,
@@ -19,14 +19,16 @@ void predict(
 
     float accuracy = model.test(test_data, test_data_size, test_targets, test_guesses);
 
-    // save_report(
-    //     current_directory,
-    //     structure,          // можно сохранять всю структуру
-    //     test_data_size,
-    //     accuracy,
-    //     test_targets,
-    //     test_guesses
-    // );
+    std::string json_network_structure = structure->structure_to_json();
+
+    save_report(
+        current_directory,
+        json_network_structure,
+        test_data_size,
+        accuracy,
+        test_targets,
+        test_guesses
+    );
 
     std::cout << "Final Test Accuracy: " << accuracy * 100.0f << "%" << std::endl;
 
