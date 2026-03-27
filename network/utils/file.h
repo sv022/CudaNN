@@ -2,8 +2,12 @@
 #include<string>
 #include<vector>
 #include<fstream>
-#include<iostream>
 #include<sstream>
+#include<iostream>
+#include<stdexcept>
+#include<cstdlib>
+
+#include"server.h"
 
 
 std::vector<std::string> split(std::string str, char c) {
@@ -96,20 +100,18 @@ void DatasetFile::LoadData() {
 	std::vector<float> inputs;
 	std::vector<float> targets;
 
-	// чтение параметров из файла
 	int index = 0;
     int image_count = 0;
 	if (input_file.is_open()) {
 		while (std::getline(input_file, line) && image_count < size) {
-			if (index % 2 == 0) { // входные данные
+			if (index % 2 == 0) {
 				std::vector<double> input;
 				part = split(line, ' ');
 				for (unsigned p = 0; p < part.size(); p++){
                     inputs.push_back(atof(part[p].c_str()));
                 }
                 
-			}
-			else { // разметка входных данных
+			} else {
 				std::vector<double> target;
 				part = split(line, ' ');
 				for (unsigned p = 0; p < part.size(); p++) {
@@ -136,8 +138,9 @@ void DatasetFile::LoadData() {
 	input_file.close();
 }
 
+
 void DatasetFile::LoadDataCSV() {
-    std::ifstream input_file(filepath);
+    std::ifstream input_file(filepath, std::ios::in);
     if (!input_file.is_open()) {
         std::cerr << "Error: Could not open file " << filepath << std::endl;
         throw std::runtime_error("Error opening file.");
@@ -147,46 +150,52 @@ void DatasetFile::LoadDataCSV() {
 
     std::string line;
     int image_count = 0;
-    bool skip_header = true;
 
-    while (std::getline(input_file, line) && image_count < size) {
-        if (skip_header) {
-            skip_header = false;
+    int progress_tick = size / 100;
+
+    if (!std::getline(input_file, line)) {
+        throw std::runtime_error("CSV file is empty");
+    }
+
+    while (image_count < size && std::getline(input_file, line)) {
+        const char* ptr = line.c_str();
+        const char* end = ptr + line.size();
+
+        char* next_ptr;
+        int label = static_cast<int>(std::strtol(ptr, &next_ptr, 10));
+        if (ptr == next_ptr || label < 0 || label >= output_nodes) {
             continue;
         }
 
-        std::vector<std::string> parts;
-        std::stringstream ss(line);
-        std::string item;
-
-        while (std::getline(ss, item, ',')) {
-            parts.push_back(item);
+        for (int i = 0; i < output_nodes; ++i) {
+            labels[image_count * output_nodes + i] = (i == label) ? 1.0f : 0.0f;
         }
 
-        if (parts.size() < 2) {
-            continue; 
+        int feature_index = 0;
+        ptr = next_ptr;
+        while (ptr < end && feature_index < input_nodes) {
+            if (*ptr == ',') ++ptr; 
+            float value = std::strtof(ptr, &next_ptr);
+            if (ptr == next_ptr) break;
+            images[image_count * input_nodes + feature_index] = value;
+            ++feature_index;
+            ptr = next_ptr;
         }
 
-        float label = std::stof(parts[0]);
-        for (int i = 0; i < output_nodes; i++){
-            if (i == label)
-                labels[image_count * output_nodes + i] = 1;
-            else 
-                labels[image_count * output_nodes + i] = 0;
+        if (feature_index != input_nodes) {
+            std::cerr << "Warning: line " << image_count + 2 << " has wrong number of features\n";
+            continue;
         }
 
-        for (size_t i = 1; i < parts.size(); i++) {
-            images[image_count * (parts.size() - 1) + (i - 1)] = std::stof(parts[i]);
+        if ((image_count % progress_tick == 0) && SERVER_LOGGING) {
+            std::cout << "Loading data: " << image_count << '\n';
         }
-
-        image_count++;
+        ++image_count;
     }
 
     reset();
-
     input_file.close();
 }
-
 
 void DatasetFile::next() {
     current_index = (current_index + 1) % size;
@@ -200,11 +209,6 @@ void DatasetFile::next() {
 void DatasetFile::get(int index){
     for (int p = 0; p < input_nodes; p++) image[p] = images[index * input_nodes + p];
     for (int p = 0; p < output_nodes; p++) target[p] = labels[index * output_nodes + p];
-
-    // for (int p = 0; p < input_nodes; p++) std::cout << image[p] << ' ';
-    // std::cout << '\n';
-    // for (int p = 0; p < output_nodes; p++) std::cout << target[p] << ' ';
-    // std::cout << '\n';
 }
 
 

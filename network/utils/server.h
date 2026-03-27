@@ -1,0 +1,1 @@
+#define SERVER_LOGGING 1
