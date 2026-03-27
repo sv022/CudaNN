@@ -76,6 +76,8 @@ int main(int argc, char* argv[]) {
     if (!isCudaDeviceAvailable()) {
         std::cerr << "CUDA device not available, exiting..." << '\n';
         return 1;
+    } else {
+        std::cout << "CUDA device detected, starting..." << '\n';
     }
 
     if (argc < 3) {
@@ -88,6 +90,8 @@ int main(int argc, char* argv[]) {
         log_arg_error(argv[0]);
         return 1;
     }
+
+    std::cout.setf(std::ios::unitbuf);
 
     NetworkStructure* structure = new NetworkStructure();
     
@@ -106,6 +110,7 @@ int main(int argc, char* argv[]) {
         
         std::string weights_path = argv[10];
         std::string current_directory = argv[11];
+        std::string report_file_name = argv[12];
 
         train(
             structure,
@@ -116,7 +121,8 @@ int main(int argc, char* argv[]) {
             test_data,
             save_weights,
             weights_path,
-            current_directory
+            current_directory,
+            report_file_name
         );
 
     } else {
@@ -126,13 +132,15 @@ int main(int argc, char* argv[]) {
         std::string test_data = argv[4];
         std::string weights_path = argv[5];
         std::string current_directory = argv[6];
+        std::string report_file_name = argv[7];
 
         predict(
             structure,
             test_data_size,
             test_data,
             weights_path,
-            current_directory
+            current_directory,
+            report_file_name
         );
     }
 

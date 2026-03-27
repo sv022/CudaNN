@@ -12,7 +12,8 @@ void train(
     std::string test_data,
     bool save_weights,
     std::string weights_path,
-    std::string current_directory
+    std::string current_directory,
+    std::string report_file_name
 ) {
     NeuralNetwork model(structure);
 
@@ -33,7 +34,7 @@ void train(
     std::string saved_weights_filename = "";
     if (save_weights) {
         std::string structure_str = structure->get_structure_string();
-        saved_weights_filename = current_directory + "/runs/" + structure_str + "-Z" + get_current_datetime_simple() + ".bin";
+        saved_weights_filename = current_directory + "/runs/" + (report_file_name == "-" ? ( "Z-" + get_current_datetime_simple() ) : report_file_name) + ".bin";
         
         model.save_weights(saved_weights_filename);
         std::cout << "Weights saved to " << saved_weights_filename << std::endl;
@@ -51,7 +52,8 @@ void train(
         accuracy_history,
         test_targets,
         test_guesses,
-        saved_weights_filename
+        saved_weights_filename,
+        report_file_name
     );
 
     free(test_targets);

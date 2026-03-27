@@ -11,6 +11,8 @@
 #include"utils/file.h"
 #include"utils/structure.h"
 
+#include"utils/server.h"
+
 #include"dense.cu"
 #include"conv.cu"
 #include"maxpooling.cu"
@@ -95,7 +97,7 @@ void NeuralNetwork::add_layer(Layer* layer){
         return;
     }
     if (layer->size != layers.back()->output_size) {
-        std::cout << "Unmatched layer " << layers.size() + 1 << " dim: " << layer->size << ' ' << "(expected " << layers.back()->output_size << ")" << '\n';
+        std::cerr << "Unmatched layer " << layers.size() + 1 << " dim: " << layer->size << ' ' << "(expected " << layers.back()->output_size << ")" << '\n';
         exit(1);
     }
 
@@ -150,6 +152,34 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
 }
 
 
+#if SERVER_LOGGING
+void NeuralNetwork::train(std::string data, int data_size, int epochs, float* accuracy_by_epoch){
+    DatasetFile train_file(data, data_size, input_nodes, output_nodes);
+
+    int progress_tick = data_size / 100;
+    
+    for (int epoch = 1; epoch <= epochs; epoch++) {
+
+        int totalCorrect = 0;
+
+        for (int i = 0; i < data_size; i++){
+            forward(train_file.image);
+            bool isCorrent = backward(train_file.image, train_file.target);
+            if (isCorrent) totalCorrect++;
+            
+            if (i % progress_tick == 0 && i != 0){
+                std::cout << "Epoch-" << epoch << ": "<< i << '\n';
+            }
+            train_file.next();
+        }
+
+        float epoch_accuracy = totalCorrect / (float)data_size;
+        accuracy_by_epoch[epoch - 1] = epoch_accuracy;
+
+        train_file.reset();
+    }
+}
+#else
 void NeuralNetwork::train(std::string data, int data_size, int epochs, float* accuracy_by_epoch){
     DatasetFile train_file(data, data_size, input_nodes, output_nodes);
     
@@ -201,8 +231,34 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, float* ac
         train_file.reset();
     }
 }
+#endif
 
+#if SERVER_LOGGING
+float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets, int* test_guesses) {
+    DatasetFile test_file(filePath, data_size, input_nodes, output_nodes);
 
+	int correctGuesses = 0;
+    int progress_tick = data_size / 100;
+
+	for (int i = 0; i < data_size; i++) {
+		int result = predict(test_file.image);
+        int test_target = getMaxActivationIndex(test_file.target);
+
+		if (result == test_target) correctGuesses++; 
+
+        if (i % progress_tick == 0 && i != 0){
+            std::cout << "Testing: " << i << '\n';
+        }
+
+        test_targets[i] = test_target;
+        test_guesses[i] = result;
+
+        test_file.next();
+	}
+
+	return (float)correctGuesses / data_size;
+}
+#else
 float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets, int* test_guesses) {
     DatasetFile test_file(filePath, data_size, input_nodes, output_nodes);
 
@@ -224,6 +280,7 @@ float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets
 
 	return (float)correctGuesses / data_size;
 }
+#endif
 
 
 int NeuralNetwork::getMaxActivationIndex(float *target){
@@ -254,9 +311,7 @@ void NeuralNetwork::save_weights(std::string path) {
 
 void NeuralNetwork::load_weights(std::string path) {
     if (!check_file_exists(path)) {
-        std::cout << "Failed to load weights " << path << ". Press any key to continue...";
-        char press_to_continue;
-        std::cin >> press_to_continue;
+        std::cerr << "Failed to load weights " << path << ". File does not exist." << '\n';
         exit(1);
     }
 

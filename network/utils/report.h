@@ -14,12 +14,11 @@ void save_report(
     float* accuracy_history,
     int* test_targets,
     int* test_guesses,
-    std::string saved_weights
+    std::string saved_weights,
+    std::string report_file_name
 ) {
     if (!check_folder_exists(current_directory + "/runs")){
-        std::cout << "Directory " << current_directory + "/runs" << " does not exits. Try creating it first. Press any key to continue...";
-        char press_to_continue;
-        std::cin >> press_to_continue;
+        std::cout << "Directory " << current_directory + "/runs" << " does not exits. Try creating it first.\n";
         exit(1);
     }
 
@@ -62,7 +61,7 @@ void save_report(
         "}";
 
     std::string filename;
-    filename = current_directory + "/runs/" + get_current_datetime_simple() + "_neuron_report.run.json";
+    filename = current_directory + "/runs/" + (report_file_name == "-" ? ( "Z-" + get_current_datetime_simple() ) : report_file_name) + ".run.json";
 
     std::ofstream file(filename);
     if (!file) {
@@ -73,8 +72,6 @@ void save_report(
 
     if (!file.good()) {
         std::cout << "Failed to save " << filename << '\n';
-        char press_to_continue;
-        std::cin >> press_to_continue;
         exit(1);
     }
 }
@@ -85,12 +82,11 @@ void save_report(
     int test_data_size,
     float test_accuracy,
     int* test_targets,
-    int* test_guesses
+    int* test_guesses,
+    std::string report_file_name
 ) {
     if (!check_folder_exists(current_directory + "/predict")){
-        std::cout << "Directory " << current_directory + "/predict" << " does not exits. Try creating it first. Press any key to continue...";
-        char press_to_continue;
-        std::cin >> press_to_continue;
+        std::cout << "Directory " << current_directory + "/predict" << " does not exits. Try creating it first.\n";
         exit(1);
     }
     
@@ -120,7 +116,7 @@ void save_report(
         "}";
 
     std::string filename;
-    filename = current_directory + "/predict/" + get_current_datetime_simple() + "_neuron_report.predict.json";
+    filename = current_directory + "/predict/" + (report_file_name == "-" ? ( "Z-" + get_current_datetime_simple() ) : report_file_name) + ".predict.json";
 
     std::ofstream file(filename);
     if (!file) {
@@ -131,8 +127,6 @@ void save_report(
 
     if (!file.good()) {
         std::cout << "Failed to save " << filename << '\n';
-        char press_to_continue;
-        std::cin >> press_to_continue;
         exit(1);
     }
 }

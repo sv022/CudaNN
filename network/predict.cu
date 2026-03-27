@@ -8,7 +8,8 @@ void predict(
     int test_data_size,
     const std::string test_data,
     const std::string weights_path,
-    const std::string current_directory
+    const std::string current_directory,
+    const std::string report_file_name
 ){
     NeuralNetwork model(structure);
 
@@ -27,7 +28,8 @@ void predict(
         test_data_size,
         accuracy,
         test_targets,
-        test_guesses
+        test_guesses,
+        report_file_name
     );
 
     std::cout << "Final Test Accuracy: " << accuracy * 100.0f << "%" << std::endl;
