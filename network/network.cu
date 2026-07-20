@@ -239,6 +239,7 @@ float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets
 
 	int correctGuesses = 0;
     int progress_tick = data_size / 100;
+    if (progress_tick <= 0) progress_tick = 1;
 
 	for (int i = 0; i < data_size; i++) {
 		int result = predict(test_file.image);
