@@ -152,6 +152,7 @@ void DatasetFile::LoadDataCSV() {
     int image_count = 0;
 
     int progress_tick = size / 100;
+    if (size < 100) progress_tick = 1;
 
     if (!std::getline(input_file, line)) {
         throw std::runtime_error("CSV file is empty");
