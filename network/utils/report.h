@@ -11,7 +11,7 @@ void save_report(
     int train_data_size,
     int test_data_size,
     float test_accuracy,
-    float* accuracy_history,
+    float* loss_history,
     int* test_targets,
     int* test_guesses,
     std::string saved_weights,
@@ -37,14 +37,14 @@ void save_report(
     json_test_targets += "]";
     json_test_guesses += "]";
 
-    std::string json_accuracy_history = "[";
+    std::string json_loss_history = "[";
 
     for (int i = 0; i < epochs; ++i) {
-        if (i > 0) json_accuracy_history += ", ";
-        json_accuracy_history += std::to_string(accuracy_history[i]);
+        if (i > 0) json_loss_history += ", ";
+        json_loss_history += std::to_string(loss_history[i]);
     }
 
-    json_accuracy_history += "]";
+    json_loss_history += "]";
 
     
     std::string json_content = 
@@ -54,7 +54,7 @@ void save_report(
         "    \"trainDataSize\": " + std::to_string(train_data_size) + ",\n"
         "    \"testDataSize\": " + std::to_string(test_data_size) + ",\n"
         "    \"testAccuracy\": " + std::to_string(test_accuracy) + ",\n"
-        "    \"accuracyHistory\": " + json_accuracy_history + ",\n"
+        "    \"lossHistory\": " + json_loss_history + ",\n"
         "    \"testTargets\": " + json_test_targets + ",\n"
         "    \"testGuesses\": " + json_test_guesses + ",\n"
         "    \"savedWeights\": " + (saved_weights == "" ? "null" : "\"" + saved_weights + "\"") + "\n"

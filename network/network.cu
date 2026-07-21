@@ -27,6 +27,7 @@ private:
     int input_nodes;
     int output_nodes;
 
+    float calculateLoss(const float* targets);
     int getMaxActivationIndex(float *target);
 
     public:
@@ -35,7 +36,7 @@ private:
     void add_layer(Layer* Layer);
 
     void forward(float *inputs);
-    bool backward(float *inputs, float *targets);
+    void backward(float *inputs, float *targets);
     int predict(float *input);
     void train(std::string data, int data_size, int epochs, float* accuracy_by_epoch);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
@@ -105,6 +106,21 @@ void NeuralNetwork::add_layer(Layer* layer){
     output_nodes = layer->output_size;
 }
 
+float NeuralNetwork::calculateLoss(const float* targets) {
+    const float* output = layers.back()->outputs;
+    const float epsilon = 1e-7f;
+
+    float loss = 0.0f;
+
+    for (int i = 0; i < output_nodes; ++i) {
+        float p = std::max(output[i], epsilon);
+        loss -= targets[i] * std::log(p);
+    }
+
+    return loss;
+}
+
+
 void NeuralNetwork::forward(float *inputs){
     float *layer_inputs;
     layer_inputs = (float*)malloc(sizeof(float) * layers[0]->size);
@@ -119,10 +135,7 @@ void NeuralNetwork::forward(float *inputs){
 }
 
 
-bool NeuralNetwork::backward(float *inputs, float *targets){
-    int _guess = getMaxActivationIndex(layers.back()->outputs);
-    int _target = getMaxActivationIndex(targets);
-
+void NeuralNetwork::backward(float *inputs, float *targets){
     int num_layers = layers.size();
     
     float *output = layers.back()->outputs; 
@@ -147,40 +160,44 @@ bool NeuralNetwork::backward(float *inputs, float *targets){
 
     free(current_errors);
     free(output_errors);
-
-    return _guess == _target; 
 }
 
 
 #if SERVER_LOGGING
-void NeuralNetwork::train(std::string data, int data_size, int epochs, float* accuracy_by_epoch){
+void NeuralNetwork::train(std::string data, int data_size, int epochs, float* loss_by_epoch){
     DatasetFile train_file(data, data_size, input_nodes, output_nodes);
 
     int progress_tick = data_size / 100;
+    if (data_size < 100) progress_tick = 1;
+
+    float epoch_loss = 0.0f;
     
     for (int epoch = 1; epoch <= epochs; epoch++) {
 
-        int totalCorrect = 0;
+        float total_loss = 0.0f;
 
         for (int i = 0; i < data_size; i++){
             forward(train_file.image);
-            bool isCorrent = backward(train_file.image, train_file.target);
-            if (isCorrent) totalCorrect++;
+
+            float sample_loss = calculateLoss(train_file.target);
+            total_loss += sample_loss;
+
+            backward(train_file.image, train_file.target);
             
             if (i % progress_tick == 0 && i != 0){
-                std::cout << "Epoch-" << epoch << ": "<< i << '\n';
+                std::cout << "Epoch-" << epoch << ": "<< i << " AvgLoss: " << epoch_loss << '\n';
             }
             train_file.next();
         }
 
-        float epoch_accuracy = totalCorrect / (float)data_size;
-        accuracy_by_epoch[epoch - 1] = epoch_accuracy;
+        epoch_loss = total_loss / (float)(data_size);
+        loss_by_epoch[epoch - 1] = epoch_loss;
 
         train_file.reset();
     }
 }
 #else
-void NeuralNetwork::train(std::string data, int data_size, int epochs, float* accuracy_by_epoch){
+void NeuralNetwork::train(std::string data, int data_size, int epochs, float* loss_by_epoch){
     DatasetFile train_file(data, data_size, input_nodes, output_nodes);
     
     std::cout << "Data " << data << " loaded. Starting training for " << epochs << " epochs..." << '\n';
@@ -194,12 +211,15 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, float* ac
         data_progress.todo = data_size;
 
         std::cout << "Epoch " << epoch << " / " << epochs << '\n';
-        int totalCorrect = 0;
+        float total_loss = 0.0f;
 
         for (int i = 0; i < data_size; i++){
             forward(train_file.image);
-            bool isCorrent = backward(train_file.image, train_file.target);
-            if (isCorrent) totalCorrect++;
+
+            float sample_loss = calculateLoss(train_file.target);
+            total_loss += sample_loss;
+
+            backward(train_file.image, train_file.target);
             
             if (i % progress_tick == 0 && i != 0){		
                 data_progress.fillUp();
@@ -215,8 +235,8 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, float* ac
             train_file.next();
         }
 
-        float epoch_accuracy = totalCorrect / (float)data_size;
-        accuracy_by_epoch[epoch - 1] = epoch_accuracy;
+        float epoch_loss = total_loss / (float)(data_size);
+        loss_by_epoch[epoch - 1] = epoch_loss;
 
         data_progress.fillUp();
         data_progress.fillUp();

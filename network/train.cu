@@ -17,13 +17,13 @@ void train(
 ) {
     NeuralNetwork model(structure);
 
-    float* accuracy_history = (float*)malloc(sizeof(float) * epochs);
+    float* loss_history = (float*)malloc(sizeof(float) * epochs);
 
     if (weights_path != "-"){
         model.load_weights(weights_path);
     }
 
-    model.train(train_data, train_data_size, epochs, accuracy_history);
+    model.train(train_data, train_data_size, epochs, loss_history);
     
     int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
@@ -49,7 +49,7 @@ void train(
         train_data_size,
         test_data_size,
         accuracy,
-        accuracy_history,
+        loss_history,
         test_targets,
         test_guesses,
         saved_weights_filename,
