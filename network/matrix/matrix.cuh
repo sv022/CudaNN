@@ -4,16 +4,16 @@
 
 
 #ifndef KERNEL_H
-#define KERNEL_H 
+#define KERNEL_H
 namespace Kernel {
-    // Kernel functions
-    __global__ void dot(float *a, float *b, float *c, int N, int M, int P);
-    __global__ void dot_bias_softmax(float *a, float *b, float *d, float *c, int N, int M, int P);
+    __global__ void dot(float *a, float *b, float *c, int M, int N, int P);
+    __global__ void dot_bias_softmax(float *a, float *b, float *d, float *c, int M, int N, int P);
     __global__ void add(float *a, float *b, float *c, int R, int C);
     __global__ void multadd(float *a, float *b, float *c, int R, int C, float k);
     __global__ void sub(float *a, float *b, float *c, int R, int C);
     __global__ void transpose(float *a, float *c, int R, int C);
     __global__ void map(float *a, float *c, int R, int C);
+    __global__ void sum_rows(const float* __restrict__ a, float* out, int M, int P);
 }
 #endif
 
@@ -134,54 +134,28 @@ void Matrix::logVector(std::vector<float> input) {
 
 // --------------- kernels ----------------------
 __global__ void Kernel::add(
-    float *a,
-    float *b,
-    float *c,
-    int R,
-    int C
+    float *a, float *b, float *c, int R, int C
 ) {
-
     int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;	
-
-    // Abort if out of range
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (row >= R || col >= C) return;
-
     c[row * C + col] = a[row * C + col] + b[row * C + col];
-
-    return;
 }
 
 __global__ void Kernel::multadd(
-    float *a,
-    float *b,
-    float *c,
-    int R,
-    int C,
-    float k
+    float *a, float *b, float *c, int R, int C, float k
 ) {
-
     int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;	
-
-    // Abort if out of range
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (row >= R || col >= C) return;
-
     c[row * C + col] = a[row * C + col] + k * b[row * C + col];
-
-    return;
 }
 
 __global__ void Kernel::dot(
-    float *a,
-    float *b,
-    float *c,
-    int M,
-    int N,
-    int P
+    float *a, float *b, float *c,
+    int M, int N, int P
 ) {
-
-	int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < M && col < P) {
@@ -193,16 +167,10 @@ __global__ void Kernel::dot(
     }
 }
 __global__ void Kernel::dot_bias_softmax(
-    float *a,
-    float *b,
-    float *d,
-    float *c,
-    int M,
-    int N,
-    int P
+    float *a, float *b, float *d, float *c,
+    int M, int N, int P
 ) {
-
-	int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < M && col < P) {
@@ -210,7 +178,7 @@ __global__ void Kernel::dot_bias_softmax(
         for (int k = 0; k < N; k++) {
             sum += a[row * N + k] * b[k * P + col];
         }
-        c[row * P + col] = activation_function(sum + d[row * P + col]);
+        c[row * P + col] = activation_function(sum + d[col]);
     }
 }
 __global__ void Kernel::map(float *input, float *output, int rows, int cols) {
@@ -218,36 +186,30 @@ __global__ void Kernel::map(float *input, float *output, int rows, int cols) {
     if (idx < rows * cols) {
         output[idx] = activation_function(input[idx]);
     }
-}	
-__global__ void Kernel::sub(
-    float *a,
-    float *b,
-    float *c,
-    int R,
-    int C
-) {
-
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;	
-
-    // Abort if out of range
-    if (row >= R || col >= C) return;
-
-    c[row * C + col] = a[row * C + col] - b[row * C + col];
-
-    return;
 }
-__global__ void Kernel::transpose(
-    float *a,
-    float *c,
-    int R,
-    int C
+__global__ void Kernel::sub(
+    float *a, float *b, float *c, int R, int C
 ) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // Abort if out of range
-    if (row >= R || col >= C) return; 
-
+    if (row >= R || col >= C) return;
+    c[row * C + col] = a[row * C + col] - b[row * C + col];
+}
+__global__ void Kernel::transpose(
+    float *a, float *c, int R, int C
+) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= R || col >= C) return;
     c[col * R + row] = a[row * C + col];
+}
+__global__ void Kernel::sum_rows(const float* __restrict__ a, float* out, int M, int P) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col >= P) return;
+
+    float s = 0.0f;
+    for (int row = 0; row < M; ++row) {
+        s += a[row * P + col];
+    }
+    out[col] = s;
 }

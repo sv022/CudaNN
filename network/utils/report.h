@@ -8,6 +8,7 @@ void save_report(
     std::string current_directory,
     std::string json_network_structure,
     int epochs,
+    int batch_size,
     int train_data_size,
     int test_data_size,
     float test_accuracy,
@@ -51,6 +52,7 @@ void save_report(
         "{\n"
         "    \"networkStructure\": " + json_network_structure + ",\n"
         "    \"epochs\": " + std::to_string(epochs) + ",\n"
+        "    \"batchSize\": " + std::to_string(batch_size) + ",\n"
         "    \"trainDataSize\": " + std::to_string(train_data_size) + ",\n"
         "    \"testDataSize\": " + std::to_string(test_data_size) + ",\n"
         "    \"testAccuracy\": " + std::to_string(test_accuracy) + ",\n"
