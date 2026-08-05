@@ -39,7 +39,7 @@ bool isCudaDeviceAvailable() {
 void log_arg_error(std::string arg){
     std::cerr << "Usage for mode TRAIN = 1: " << arg << " "
         << "<mode> <layers_conf_string> "
-        << "<learning_rate> <epochs> <train_data_size> <test_data_size> "
+        << "<learning_rate> <epochs> <batch_size> <train_data_size> <test_data_size> "
         << "<train_data_path> <test_data_path> <save_weights> <weights_path> <current_dir>\n";
     std::cerr << "Usage for mode TEST = 0: " << arg << " "
         << "<mode> <layers_conf_string> "
@@ -76,8 +76,6 @@ int main(int argc, char* argv[]) {
     if (!isCudaDeviceAvailable()) {
         std::cerr << "CUDA device not available, exiting..." << '\n';
         return 1;
-    } else {
-        std::cout << "CUDA device detected, starting..." << '\n';
     }
 
     if (argc < 3) {
@@ -101,20 +99,22 @@ int main(int argc, char* argv[]) {
         parse_network_structure(argv[2], learning_rate, structure);
 
         int epochs = std::stoi(argv[4]);
-        int train_data_size = std::stoi(argv[5]);
-        int test_data_size = std::stoi(argv[6]);
+        int batch_size = std::stoi(argv[5]);
+        int train_data_size = std::stoi(argv[6]);
+        int test_data_size = std::stoi(argv[7]);
         
-        std::string train_data = argv[7];
-        std::string test_data = argv[8];
-        bool save_weights = std::stoi(argv[9]);
+        std::string train_data = argv[8];
+        std::string test_data = argv[9];
+        bool save_weights = std::stoi(argv[10]);
         
-        std::string weights_path = argv[10];
-        std::string current_directory = argv[11];
-        std::string report_file_name = argv[12];
+        std::string weights_path = argv[11];
+        std::string current_directory = argv[12];
+        std::string report_file_name = argv[13];
 
         train(
             structure,
             epochs,
+            batch_size,
             train_data_size,
             test_data_size,
             train_data,
