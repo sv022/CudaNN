@@ -192,11 +192,7 @@ void test_maxpool_backward(){
     const int pool = 2;
     const int stride = 2;
 
-    const int OH = 3;
-    const int OW = 3;
-
     const int input_size = C * H * W;
-    const int output_size = C * OH * OW;
     const int batch_size = 3;
 
     MaxPooling layer(W, H, C, pool, stride);

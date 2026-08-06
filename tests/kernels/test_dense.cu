@@ -73,6 +73,7 @@ void test_dense_forward_batch_size_1_equivalence() {
 
     for (int i = 0; i < in_size*out_size; ++i) dense.weights[i] = 0.05f * ((i % 13) - 6);
     for (int j = 0; j < out_size; ++j) dense.biases[j] = 0.02f * j;
+    dense.sync_weights_to_device();
 
     float input[in_size];
     for (int i = 0; i < in_size; ++i) input[i] = 0.1f * ((i*3) % 7) - 0.3f;
@@ -94,6 +95,7 @@ void test_dense_forward_batch() {
 
     for (int i = 0; i < in_size*out_size; ++i) dense.weights[i] = 0.03f * ((i % 11) - 5);
     for (int j = 0; j < out_size; ++j) dense.biases[j] = 0.04f * j - 0.1f;
+    dense.sync_weights_to_device();
 
     std::vector<float> input_batch(batch_size * in_size);
     for (int b = 0; b < batch_size; ++b)
@@ -118,6 +120,7 @@ void test_dense_backward_batch() {
 
     for (int i = 0; i < in_size*out_size; ++i) dense.weights[i] = 0.03f * ((i % 11) - 5);
     for (int j = 0; j < out_size; ++j) dense.biases[j] = 0.04f * j - 0.1f;
+    dense.sync_weights_to_device();
 
     std::vector<float> weights_before(dense.weights, dense.weights + in_size*out_size);
     std::vector<float> biases_before(dense.biases, dense.biases + out_size);
