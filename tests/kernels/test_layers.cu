@@ -1,6 +1,6 @@
-#include"../network/conv.cu"
-#include"../network/maxpooling.cu"
-#include"../network/dense.cu"
+#include"../../network/conv.cu"
+#include"../../network/maxpooling.cu"
+#include"../../network/dense.cu"
 
 void test_full_pipeline(){
 

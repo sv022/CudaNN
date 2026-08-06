@@ -14,10 +14,12 @@ class MaxPooling : public Layer
     int output_width;
     int output_height;
 
-    int* max_indices; 
+    int* max_indices;
 
     public:
     MaxPooling(int in_w, int in_h, int channels, int pool=2, int s=2);
+    void set_batch_size(int bs) override;
+
     void forward(float *inputs) override;
     float* backward(float *inputs, float *targets) override;
 
@@ -45,29 +47,42 @@ MaxPooling::MaxPooling(int in_w, int in_h, int channels, int pool, int s) {
     size = channels * in_w * in_h;
     output_size = channels * output_width * output_height;
 
-    outputs = (float*)malloc(sizeof(float) * output_size);
-    max_indices = (int*)malloc(sizeof(int) * output_size);
+    batch_size = 1;
+    outputs = (float*)malloc(sizeof(float) * (size_t)batch_size * output_size);
+    max_indices = (int*)malloc(sizeof(int) * (size_t)batch_size * output_size);
+}
+
+void MaxPooling::set_batch_size(int bs) {
+    if (bs == batch_size) return;
+    batch_size = bs;
+    free(outputs);
+    free(max_indices);
+    outputs = (float*)malloc(sizeof(float) * (size_t)batch_size * output_size);
+    max_indices = (int*)malloc(sizeof(int) * (size_t)batch_size * output_size);
 }
 
 void MaxPooling::forward(float* inputs) {
-    int input_size  = channels * input_height * input_width;
-    int output_size_total = channels * output_height * output_width;
+    int input_size_per_image  = channels * input_height * input_width;
+    int output_size_per_image = channels * output_height * output_width;
+
+    size_t total_input_size  = (size_t)batch_size * input_size_per_image;
+    size_t total_output_size = (size_t)batch_size * output_size_per_image;
 
     float *d_inputs, *d_outputs;
     int *d_indices;
 
-    cudaMalloc(&d_inputs, input_size * sizeof(float));
-    cudaMalloc(&d_outputs, output_size_total * sizeof(float));
-    cudaMalloc(&d_indices, output_size_total * sizeof(int));
+    cudaMalloc(&d_inputs, total_input_size * sizeof(float));
+    cudaMalloc(&d_outputs, total_output_size * sizeof(float));
+    cudaMalloc(&d_indices, total_output_size * sizeof(int));
 
-    cudaMemcpy(d_inputs, inputs, input_size * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemset(d_outputs, 0, output_size_total * sizeof(float));
+    cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemset(d_outputs, 0, total_output_size * sizeof(float));
 
     dim3 BLOCK(16, 16);
     dim3 GRID(
         (output_width  + BLOCK.x - 1) / BLOCK.x,
         (output_height + BLOCK.y - 1) / BLOCK.y,
-        channels
+        channels * batch_size
     );
 
     maxpool_forward_kernel<<<GRID, BLOCK>>>(
@@ -80,13 +95,14 @@ void MaxPooling::forward(float* inputs) {
         kernel_size,
         stride,
         output_height,
-        output_width
+        output_width,
+        batch_size
     );
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(outputs, d_outputs, output_size_total * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(max_indices, d_indices, output_size_total * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(max_indices, d_indices, total_output_size * sizeof(int), cudaMemcpyDeviceToHost);
 
     cudaFree(d_inputs);
     cudaFree(d_outputs);
@@ -94,36 +110,41 @@ void MaxPooling::forward(float* inputs) {
 }
 
 float* MaxPooling::backward(float* inputs, float* next_errors) {
-    int input_size  = channels * input_height * input_width;
-    int output_size_total = channels * output_height * output_width;
+    int input_size_per_image  = channels * input_height * input_width;
+    int output_size_per_image = channels * output_height * output_width;
+
+    size_t total_input_size  = (size_t)batch_size * input_size_per_image;
+    size_t total_output_size = (size_t)batch_size * output_size_per_image;
 
     float *d_next = nullptr;
     float *d_dInput = nullptr;
     int *d_indices = nullptr;
 
-    cudaMalloc(&d_next, output_size_total * sizeof(float));
-    cudaMalloc(&d_indices,output_size_total * sizeof(int));
-    cudaMalloc(&d_dInput, input_size * sizeof(float));
+    cudaMalloc(&d_next, total_output_size * sizeof(float));
+    cudaMalloc(&d_indices, total_output_size * sizeof(int));
+    cudaMalloc(&d_dInput, total_input_size * sizeof(float));
 
-    cudaMemcpy(d_next, next_errors, output_size_total * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, max_indices, output_size_total * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_next, next_errors, total_output_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indices, max_indices, total_output_size * sizeof(int), cudaMemcpyHostToDevice);
 
-    cudaMemset(d_dInput, 0, input_size * sizeof(float));
+    cudaMemset(d_dInput, 0, total_input_size * sizeof(float));
 
     int threads = 256;
-    int blocks = (output_size_total + threads - 1) / threads;
+    int blocks = (total_output_size + threads - 1) / threads;
 
     maxpool_backward_kernel<<<blocks, threads>>>(
         d_indices,
         d_next,
         d_dInput,
-        output_size_total
+        output_size_per_image,
+        input_size_per_image,
+        total_output_size
     );
 
     cudaDeviceSynchronize();
 
-    float* prev_errors = (float*) malloc(sizeof(float) * input_size);
-    cudaMemcpy(prev_errors, d_dInput, input_size * sizeof(float), cudaMemcpyDeviceToHost);
+    float* prev_errors = (float*) malloc(sizeof(float) * total_input_size);
+    cudaMemcpy(prev_errors, d_dInput, total_input_size * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(d_next);
     cudaFree(d_indices);

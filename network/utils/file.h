@@ -6,89 +6,142 @@
 #include<iostream>
 #include<stdexcept>
 #include<cstdlib>
-
-#include"server.h"
+#include<cstring>
+#include<algorithm>
+#include<random>
+#include<cuda_runtime.h>
+#include"logging.h"
 
 
 std::vector<std::string> split(std::string str, char c) {
-	std::vector<std::string> array;
-	std::string element = "";
+    std::vector<std::string> array;
+    std::string element = "";
 
-	for (unsigned i = 0; i < str.length(); i++) {
-		if (str[i] != c)
-			element += str[i];
-		else if (str[i] == c && element != "") {
-			array.push_back(element);
-			element = "";
-		}
-	} if (element != "")
-		array.push_back(element);
 
-	return array;
+    for (unsigned i = 0; i < str.length(); i++) {
+        if (str[i] != c)
+            element += str[i];
+        else if (str[i] == c && element != "") {
+            array.push_back(element);
+            element = "";
+        }
+    } if (element != "")
+        array.push_back(element);
+
+
+    return array;
 }
 
-
-class DatasetFile 
+class DatasetFile
 {
 private:
     int size;
-    int current_index;
     int input_nodes;
     int output_nodes;
+    int batch_size;
+    int num_batches;
+    int current_batch;
     std::string filepath;
 
     bool isopen;
 
-    
     float *images;
     float *labels;
-    
+
+    std::vector<int> indices;
+    std::mt19937 rng;
+
     void LoadData();
     void LoadDataCSV();
-public:
-    float *image;
-    float *target;
+    void gather_batch(int start_pos, int count);
+    void allocate_batch_buffers();
 
-    DatasetFile(std::string filepath, int data_size, int inodes, int onodes);
+public:
+    float *image_batch;
+    float *target_batch;
+
+    int current_batch_size;
+
+    DatasetFile(std::string filepath, int data_size, int inodes, int onodes, int batch_size_);
     ~DatasetFile();
-    void next();
-    void get(int index);
+
+    void next_batch();
+    void get_batch(int index);
     void reset();
+    void shuffle();
+
+    int get_num_batches() const { return num_batches; }
+    int get_batch_size() const { return batch_size; }
+    int get_input_nodes() const { return input_nodes; }
+    int get_output_nodes() const { return output_nodes; }
 };
 
-DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes){
+
+DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes, int batch_size_) {
     filepath = path;
     size = data_size;
     input_nodes = inodes;
     output_nodes = onodes;
-    current_index = 0;
+    batch_size = batch_size_;
+    current_batch = 0;
 
     isopen = false;
 
-    image = (float*)malloc(input_nodes * sizeof(float));
-    target = (float*)malloc(output_nodes * sizeof(float));
+    num_batches = (size + batch_size - 1) / batch_size;
 
-    images = (float*)malloc(input_nodes * (size + 1) *  sizeof(float));
-    labels = (float*)malloc(output_nodes * (size + 1) *  sizeof(float));
+    images = (float*)malloc((size_t)input_nodes * size * sizeof(float));
+    labels = (float*)malloc((size_t)output_nodes * size * sizeof(float));
 
-    if (path.substr(path.find_last_of(".") + 1) == "csv") 
+    if (!images || !labels) {
+        throw std::runtime_error("DatasetFile: failed to allocate host memory for dataset.");
+    }
+
+    image_batch = nullptr;
+    target_batch = nullptr;
+    current_batch_size = 0;
+    rng.seed(12345);
+
+    allocate_batch_buffers();
+
+    if (path.substr(path.find_last_of(".") + 1) == "csv")
         LoadDataCSV();
-    else 
+    else
         LoadData();
+
+    indices.resize(size);
+    for (int i = 0; i < size; i++) indices[i] = i;
+
+    reset();
 }
+
+
+void DatasetFile::allocate_batch_buffers() {
+    cudaError_t err1 = cudaHostAlloc((void**)&image_batch,
+                                      (size_t)batch_size * input_nodes * sizeof(float),
+                                      cudaHostAllocDefault);
+    cudaError_t err2 = cudaHostAlloc((void**)&target_batch,
+                                      (size_t)batch_size * output_nodes * sizeof(float),
+                                      cudaHostAllocDefault);
+
+    if (err1 != cudaSuccess || err2 != cudaSuccess) {
+        throw std::runtime_error("DatasetFile: cudaHostAlloc failed for batch buffers.");
+    }
+}
+
 
 DatasetFile::~DatasetFile()
 {
-    free(image);
-    free(target);
+    if (image_batch) cudaFreeHost(image_batch);
+    if (target_batch) cudaFreeHost(target_batch);
     free(images);
     free(labels);
 }
 
+
 void DatasetFile::LoadData() {
-	std::string line;
-	std::vector<std::string> part;
-	std::ifstream input_file(filepath);
+    std::string line;
+    std::vector<std::string> part;
+    std::ifstream input_file(filepath);
 
     if (!input_file.is_open()) {
         std::cerr << "Error: Could not open file " << filepath << std::endl;
@@ -97,45 +150,40 @@ void DatasetFile::LoadData() {
 
     isopen = true;
 
-	std::vector<float> inputs;
-	std::vector<float> targets;
+    std::vector<float> inputs;
+    std::vector<float> targets;
 
-	int index = 0;
+    int index = 0;
     int image_count = 0;
-	if (input_file.is_open()) {
-		while (std::getline(input_file, line) && image_count < size) {
-			if (index % 2 == 0) {
-				std::vector<double> input;
-				part = split(line, ' ');
-				for (unsigned p = 0; p < part.size(); p++){
+    if (input_file.is_open()) {
+        while (std::getline(input_file, line) && image_count < size) {
+            if (index % 2 == 0) {
+                std::vector<double> input;
+                part = split(line, ' ');
+                for (unsigned p = 0; p < part.size(); p++){
                     inputs.push_back(atof(part[p].c_str()));
                 }
-                
-			} else {
-				std::vector<double> target;
-				part = split(line, ' ');
-				for (unsigned p = 0; p < part.size(); p++) {
-					targets.push_back(atof(part[p].c_str()));
+
+            } else {
+                std::vector<double> target;
+                part = split(line, ' ');
+                for (unsigned p = 0; p < part.size(); p++) {
+                    targets.push_back(atof(part[p].c_str()));
                 }
                 image_count++;
-			}
-			index++;
-		}
-	}
+            }
+            index++;
+        }
+    }
 
-    for (int i = 0; i < inputs.size(); i++){
+    for (size_t i = 0; i < inputs.size(); i++){
         images[i] = inputs[i];
     }
-    for (int i = 0; i < targets.size(); i++){
+    for (size_t i = 0; i < targets.size(); i++){
         labels[i] = targets[i];
     }
 
-    for (int p = 0; p < input_nodes; p++) image[p] = images[current_index * input_nodes + p];
-    for (int p = 0; p < output_nodes; p++) target[p] = labels[current_index * output_nodes + p];
-
-    reset();
-
-	input_file.close();
+    input_file.close();
 }
 
 
@@ -175,7 +223,7 @@ void DatasetFile::LoadDataCSV() {
         int feature_index = 0;
         ptr = next_ptr;
         while (ptr < end && feature_index < input_nodes) {
-            if (*ptr == ',') ++ptr; 
+            if (*ptr == ',') ++ptr;
             float value = std::strtof(ptr, &next_ptr);
             if (ptr == next_ptr) break;
             images[image_count * input_nodes + feature_index] = value;
@@ -188,35 +236,59 @@ void DatasetFile::LoadDataCSV() {
             continue;
         }
 
-        if ((image_count % progress_tick == 0) && SERVER_LOGGING) {
-            std::cout << "Loading data: " << image_count << '\n';
+        if ((image_count % progress_tick == 0)) {
+            log_data_loading_process(size, image_count);
         }
         ++image_count;
     }
 
-    reset();
     input_file.close();
 }
 
-void DatasetFile::next() {
-    current_index = (current_index + 1) % size;
-    const size_t offset = current_index * input_nodes;
 
-    memcpy(image, images + offset, input_nodes * sizeof(float));
-    memcpy(target, labels + offset * output_nodes / input_nodes, output_nodes * sizeof(float));
+void DatasetFile::gather_batch(int start_pos, int count) {
+    for (int b = 0; b < count; b++) {
+        int src_idx = indices[start_pos + b];
+
+        memcpy(image_batch + (size_t)b * input_nodes,
+               images + (size_t)src_idx * input_nodes,
+               input_nodes * sizeof(float));
+
+        memcpy(target_batch + (size_t)b * output_nodes,
+               labels + (size_t)src_idx * output_nodes,
+               output_nodes * sizeof(float));
+    }
+    current_batch_size = count;
 }
 
 
-void DatasetFile::get(int index){
-    for (int p = 0; p < input_nodes; p++) image[p] = images[index * input_nodes + p];
-    for (int p = 0; p < output_nodes; p++) target[p] = labels[index * output_nodes + p];
+void DatasetFile::get_batch(int batch_index) {
+    if (batch_index < 0 || batch_index >= num_batches) {
+        throw std::out_of_range("DatasetFile::get_batch: index out of range.");
+    }
+
+    int start_pos = batch_index * batch_size;
+    int count = std::min(batch_size, size - start_pos);
+
+    gather_batch(start_pos, count);
+    current_batch = batch_index;
 }
 
 
-void DatasetFile::reset(){
-    current_index = 0;
-
-    for (int p = 0; p < input_nodes; p++) image[p] = images[current_index * input_nodes + p];
-    for (int p = 0; p < output_nodes; p++) target[p] = labels[current_index * output_nodes + p];
+void DatasetFile::next_batch() {
+    current_batch = (current_batch + 1) % num_batches;
+    get_batch(current_batch);
 }
 
+
+void DatasetFile::reset() {
+    current_batch = 0;
+    get_batch(0);
+}
+
+
+void DatasetFile::shuffle() {
+    std::shuffle(indices.begin(), indices.end(), rng);
+    current_batch = 0;
+    get_batch(0);
+}

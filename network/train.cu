@@ -6,6 +6,7 @@
 void train(
     NetworkStructure* structure,
     int epochs,
+    int batch_size,
     int train_data_size,
     int test_data_size,
     std::string train_data,
@@ -23,7 +24,7 @@ void train(
         model.load_weights(weights_path);
     }
 
-    model.train(train_data, train_data_size, epochs, loss_history);
+    model.train(train_data, train_data_size, epochs, batch_size, loss_history);
     
     int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
@@ -46,6 +47,7 @@ void train(
         current_directory,
         json_network_structure,
         epochs,
+        batch_size,
         train_data_size,
         test_data_size,
         accuracy,
