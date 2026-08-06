@@ -31,7 +31,7 @@ conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2
 
 Args list for training:
 ```sh
-<mode (TRAIN=1)> <layer_config_string> <learning_rate> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
+<mode (TRAIN=1)> <layer_config_string> <learning_rate> <batch_size> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
 ```
 
 `<current_dir>` is where results will be saved in `./runs` subdirectory.
@@ -48,5 +48,5 @@ Args list for testing:
 Example:
 
 ```sh
-.\network.exe 1 "conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10" 0.05 5 60000 10000 C:/Users/YOURUSERNAME/mnist_digits_train_60000.csv C:/Users/YOURUSERNAME/mnist_digits_test_10000.csv 1 - C:/Users/YOURUSERNAME/network
+.\network.exe 1 "conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10" 0.001 128 5 60000 10000 C:/Users/YOURUSERNAME/mnist_digits_train_60000.csv C:/Users/YOURUSERNAME/mnist_digits_test_10000.csv 1 - C:/Users/YOURUSERNAME/network
 ```
