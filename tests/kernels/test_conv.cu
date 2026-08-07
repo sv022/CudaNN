@@ -3,7 +3,7 @@
 #include <iostream>
 #include <vector>
 
-#include"../../network/conv.cu"
+#include "../../network/conv.cu"
 
 static int g_tests_run = 0;
 static int g_tests_failed = 0;
@@ -149,7 +149,7 @@ void conv_backward_cpu_batch(
 }
 
 // ============================================================
-// Test 1: batch_size=1 
+// Test 1: batch_size=1
 // ============================================================
 
 void test_conv_forward_batch_size_1_equivalence() {
@@ -173,6 +173,7 @@ void test_conv_forward_batch_size_1_equivalence() {
     float biases[K] = {0, 1, -1, 0.5f};
     memcpy(conv.kernels, kernels, sizeof(kernels));
     memcpy(conv.biases, biases, sizeof(biases));
+    conv.sync_weights_to_device();
 
     float input[input_size] = {
         0.68f,0.50f,0.92f,0.15f,0.16f,0.98f,0.88f,0.54f,0.52f,
@@ -230,6 +231,7 @@ void test_conv_forward_batch() {
     float biases[K] = {0, 1, -1, 0.5f};
     memcpy(conv.kernels, kernels, sizeof(kernels));
     memcpy(conv.biases, biases, sizeof(biases));
+    conv.sync_weights_to_device();
 
     std::vector<float> input_batch(batch_size * input_size);
     for (int b = 0; b < batch_size; ++b) {
@@ -279,6 +281,7 @@ void test_conv_forward_uneven_batch() {
 
     for (int i = 0; i < kernel_total; i++) conv.kernels[i] = 0.02f * (i % 11 - 5);
     for (int i = 0; i < K; i++) conv.biases[i] = 0.05f * i;
+    conv.sync_weights_to_device();
 
     std::vector<float> kernels_snapshot(conv.kernels, conv.kernels + kernel_total);
     std::vector<float> biases_snapshot(conv.biases, conv.biases + K);
@@ -326,6 +329,7 @@ void test_conv_backward_batch() {
 
     for (int i = 0; i < kernel_total; i++) conv.kernels[i] = 0.01f * (i + 1);
     for (int i = 0; i < K; i++) conv.biases[i] = 0.1f * i;
+    conv.sync_weights_to_device();
 
     std::vector<float> kernels_before(conv.kernels, conv.kernels + kernel_total);
     std::vector<float> biases_before(conv.biases, conv.biases + K);
