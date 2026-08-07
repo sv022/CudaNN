@@ -1,5 +1,6 @@
 #include"layer.cuh"
 
+
 class MaxPooling : public Layer
 {
     private:
