@@ -1,6 +1,8 @@
 #pragma once
 #include"matrix/matrix.cuh"
 #include"matrix/coarse_1d.cuh"
+#include"convolution/convolution.cuh"
+#include"convolution/pooling.cuh"
 #include<fstream>
 
 

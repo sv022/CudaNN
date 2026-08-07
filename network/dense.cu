@@ -1,5 +1,5 @@
 #include <utility>
-#include"layer.cu"
+#include"layer.cuh"
 
 
 class Dense : public Layer

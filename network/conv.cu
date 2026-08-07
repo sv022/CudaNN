@@ -1,5 +1,4 @@
-#include"layer.cu"
-#include"convolution/convolution.cuh"
+#include"layer.cuh"
 
 
 class Conv : public Layer

@@ -1,5 +1,4 @@
-#include"layer.cu"
-#include"convolution/pooling.cuh"
+#include"layer.cuh"
 
 class MaxPooling : public Layer
 {
