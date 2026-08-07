@@ -15,10 +15,12 @@ class Layer
 
     float learning_rate = 0.1;
 
+    ActivationType activation = ActivationType::Linear;
+
     float *outputs;
 
     virtual void forward(float *inputs) {};
-    virtual float* backward(float *inputs, float *next_errors) = 0;
+    virtual float* backward(float *inputs, float *next_errors, bool raw_gradient = false) = 0;
 
     virtual void set_batch_size(int bs) { batch_size = bs; };
     virtual void set_learning_rate(float lr) { learning_rate = lr; };

@@ -19,13 +19,13 @@ class Conv : public Layer
 
     public:
     Conv(int input_height, int input_width, int channels, int kernel_size,
-         int n_kernels = 1, int stride = 1, int padding = 0);
+         int n_kernels = 1, int stride = 1, int padding = 0, ActivationType activation = ActivationType::ReLU);
     ~Conv();
 
     void set_batch_size(int bs) override;
     void sync_weights_to_device();
 
-    float* backward(float *inputs, float *targets);
+    float* backward(float *inputs, float *targets, bool);
     void forward(float *inputs) override;
 
     void save_weights(std::string path) override;
@@ -41,10 +41,12 @@ class Conv : public Layer
 };
 
 
-Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, int padding) {
+Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, int padding, ActivationType act) {
     input_width = input_w; 
     input_height = input_h; 
     channels = c;
+
+    activation = act;
 
     size = input_w * input_h * channels;
     kernel_size = k; 
@@ -148,14 +150,14 @@ void Conv::forward(float* inputs) {
         channels, input_height, input_width,
         kernel_size, stride, padding,
         num_kernels, output_height, output_width,
-        batch_size
+        batch_size, activation
     );
 
     cudaDeviceSynchronize();
     cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-float* Conv::backward(float* inputs, float* next_errors) {
+float* Conv::backward(float* inputs, float* next_errors, bool raw_gradient) {
     int input_size_per_image = channels * input_height * input_width;
     int kernel_total = num_kernels * channels * kernel_size * kernel_size;
     int output_size_per_image = num_kernels * output_height * output_width;
@@ -163,10 +165,9 @@ float* Conv::backward(float* inputs, float* next_errors) {
     size_t total_output_size = (size_t)batch_size * output_size_per_image;
 
     float* local_grad = (float*) malloc(sizeof(float) * total_output_size);
-    for (size_t i = 0; i < total_output_size; ++i) {
-        float relu_derivative = (outputs[i] > 0.0f) ? 1.0f : 0.0f;
-        local_grad[i] = next_errors[i] * relu_derivative;
-    }
+    if (raw_gradient) for (size_t i = 0; i < total_output_size; ++i) local_grad[i] = next_errors[i];
+    else for (size_t i = 0; i < total_output_size; ++i) local_grad[i] = activation_derivative(next_errors[i], outputs[i], activation);
+    
 
     cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_local_grad, local_grad, total_output_size * sizeof(float), cudaMemcpyHostToDevice);

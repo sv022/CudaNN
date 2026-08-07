@@ -47,24 +47,39 @@ void log_arg_error(std::string arg){
         << "<weights_path> <current_dir>\n";
 }
 
+ActivationType map_activation_type(std::string activation_str) {
+    if (activation_str == "sigmoid") return ActivationType::Sigmoid;
+    if (activation_str == "relu") return ActivationType::ReLU;
+    if (activation_str == "softmax") return ActivationType::Softmax;
+    throw std::runtime_error("Unknown activation function: " + activation_str);
+}
 
-void parse_network_structure(const std::string net_str, float learning_rate, NetworkStructure* net) {
+LossType parse_loss_type(std::string loss_str) {
+    if (loss_str == "mse") return LossType::MSE;
+    if (loss_str == "bce") return LossType::BinaryCrossEntropy;
+    if (loss_str == "cce") return LossType::CategoricalCrossEntropy;
+    throw std::runtime_error("Unknown loss function: " + loss_str);
+}
+
+void parse_network_structure(const std::string net_str, float learning_rate, LossType loss, NetworkStructure* net) {
     auto layers = split(net_str, '-');
 
     net->learning_rate = learning_rate;
+    net->loss_type = loss;
 
     for (const auto& layer : layers) {
         if (layer.rfind("conv_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
             auto whc = split(parts[0], 'x');
-            net->add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]));
+            if (parts[5] == "softmax") throw std::runtime_error("Softmax not supported for conv layers.");
+            net->add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]), map_activation_type(parts[5]));
         } else if (layer.rfind("pool_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
             auto whc = split(parts[0], 'x');
             net->add_pool(std::stoi(whc[0]), std::stoi(whc[1]), std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]));
         } else if (layer.rfind("dense_", 0) == 0) {
             auto parts = split(layer.substr(6), '_');
-            net->add_dense(std::stoi(parts[0]), std::stoi(parts[1]));
+            net->add_dense(std::stoi(parts[0]), std::stoi(parts[1]), map_activation_type(parts[2]));
         } else {
             throw std::runtime_error("Unknown layer type: " + layer);
         }
@@ -95,21 +110,22 @@ int main(int argc, char* argv[]) {
     
     if (mode == TRAIN) {
         float learning_rate = std::stof(argv[3]);
+        LossType loss_function = parse_loss_type(argv[4]);
 
-        parse_network_structure(argv[2], learning_rate, structure);
+        parse_network_structure(argv[2], learning_rate, loss_function, structure);
 
-        int epochs = std::stoi(argv[4]);
-        int batch_size = std::stoi(argv[5]);
-        int train_data_size = std::stoi(argv[6]);
-        int test_data_size = std::stoi(argv[7]);
+        int epochs = std::stoi(argv[5]);
+        int batch_size = std::stoi(argv[6]);
+        int train_data_size = std::stoi(argv[7]);
+        int test_data_size = std::stoi(argv[8]);
         
-        std::string train_data = argv[8];
-        std::string test_data = argv[9];
-        bool save_weights = std::stoi(argv[10]);
+        std::string train_data = argv[9];
+        std::string test_data = argv[10];
+        bool save_weights = std::stoi(argv[11]);
         
-        std::string weights_path = argv[11];
-        std::string current_directory = argv[12];
-        std::string report_file_name = argv[13];
+        std::string weights_path = argv[12];
+        std::string current_directory = argv[13];
+        std::string report_file_name = argv[14];
 
         train(
             structure,
@@ -126,7 +142,7 @@ int main(int argc, char* argv[]) {
         );
 
     } else {
-        parse_network_structure(argv[2], 0.0f, structure);
+        parse_network_structure(argv[2], 0.0f, LossType::MSE, structure);
         
         int test_data_size = std::stoi(argv[3]);
         std::string test_data = argv[4];

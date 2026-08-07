@@ -1,25 +1,24 @@
 #pragma once
 #include <iostream>
 #include <vector>
+#include"../activation/activation.cuh"
 
 
 #ifndef KERNEL_H
 #define KERNEL_H
 namespace Kernel {
     __global__ void dot(float *a, float *b, float *c, int M, int N, int P);
-    __global__ void dot_bias_softmax(float *a, float *b, float *d, float *c, int M, int N, int P);
+    __global__ void dot_bias_activation(float *a, float *b, float *d, float *c, int M, int N, int P, ActivationType act);
+    __global__ void softmax_forward(float *z, float *output, int batch_size, int out_size);
     __global__ void add(float *a, float *b, float *c, int R, int C);
     __global__ void multadd(float *a, float *b, float *c, int R, int C, float k);
     __global__ void sub(float *a, float *b, float *c, int R, int C);
     __global__ void transpose(float *a, float *c, int R, int C);
-    __global__ void map(float *a, float *c, int R, int C);
+    __global__ void map(float *a, float *c, int R, int C, ActivationType act);
     __global__ void sum_rows(const float* __restrict__ a, float* out, int M, int P);
 }
 #endif
 
-__device__ float activation_function(float x) {
-    return 1.0f / (1.0f + expf(-x)); 
-}
 
 class Matrix {
     public:
@@ -166,9 +165,9 @@ __global__ void Kernel::dot(
         c[row * P + col] = sum;
     }
 }
-__global__ void Kernel::dot_bias_softmax(
+__global__ void Kernel::dot_bias_activation(
     float *a, float *b, float *d, float *c,
-    int M, int N, int P
+    int M, int N, int P, ActivationType act
 ) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -178,13 +177,57 @@ __global__ void Kernel::dot_bias_softmax(
         for (int k = 0; k < N; k++) {
             sum += a[row * N + k] * b[k * P + col];
         }
-        c[row * P + col] = activation_function(sum + d[col]);
+        c[row * P + col] = activation_function(sum + d[col], act);
     }
 }
-__global__ void Kernel::map(float *input, float *output, int rows, int cols) {
+__global__ void Kernel::softmax_forward(float *z, float *output, int batch_size, int out_size) {
+    int row = blockIdx.x;
+    if (row >= batch_size) return;
+
+    extern __shared__ float shared[];
+    int tid = threadIdx.x;
+    int n = blockDim.x;
+
+    float *row_z = z + (size_t)row * out_size;
+    float *row_out = output + (size_t)row * out_size;
+
+    float local_max = -INFINITY;
+    for (int i = tid; i < out_size; i += n) {
+        if (row_z[i] > local_max) local_max = row_z[i];
+    }
+    shared[tid] = local_max;
+    __syncthreads();
+    for (int s = n / 2; s > 0; s >>= 1) {
+        if (tid < s && shared[tid + s] > shared[tid]) shared[tid] = shared[tid + s];
+        __syncthreads();
+    }
+    float row_max = shared[0];
+    __syncthreads();
+
+    for (int i = tid; i < out_size; i += n) {
+        row_out[i] = expf(row_z[i] - row_max);
+    }
+    __syncthreads();
+
+    float local_sum = 0.0f;
+    for (int i = tid; i < out_size; i += n) local_sum += row_out[i];
+    shared[tid] = local_sum;
+    __syncthreads();
+    for (int s = n / 2; s > 0; s >>= 1) {
+        if (tid < s) shared[tid] += shared[tid + s];
+        __syncthreads();
+    }
+    float row_sum = shared[0];
+    __syncthreads();
+
+    for (int i = tid; i < out_size; i += n) {
+        row_out[i] = row_out[i] / row_sum;
+    }
+}
+__global__ void Kernel::map(float *input, float *output, int rows, int cols, ActivationType act) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < rows * cols) {
-        output[idx] = activation_function(input[idx]);
+        output[idx] = activation_function(input[idx], act);
     }
 }
 __global__ void Kernel::sub(

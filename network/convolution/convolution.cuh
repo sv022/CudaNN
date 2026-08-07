@@ -1,16 +1,17 @@
-__device__ float activation_function_ReLU(float x) {
-    return x > 0.0f ? x : 0.0f;
-}
+#pragma once
+#include"../activation/activation.cuh"
+
 
 __global__ void conv_forward_kernel(
-    const float* __restrict__ inputs,    // [B*C*H*W]
-    const float* __restrict__ kernels,   // [N*C*K*K]
-    const float* __restrict__ biases,    // [N]
-    float* outputs,                      // [B*N*OH*OW]
+    const float* __restrict__ inputs,
+    const float* __restrict__ kernels,
+    const float* __restrict__ biases,
+    float* outputs,
     int C, int H, int W,
     int K, int stride, int pad,
     int N, int OH, int OW,
-    int batch_size
+    int batch_size,
+    ActivationType activation
 ){
     int out_x = blockIdx.x * blockDim.x + threadIdx.x;
     int out_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -48,8 +49,7 @@ __global__ void conv_forward_kernel(
             }
         }
     }
-
-    outputs[(size_t)b * N * OH * OW + n * (OH * OW) + out_y * OW + out_x] = activation_function_ReLU(sum);
+    outputs[(size_t)b * N * OH * OW + n * (OH * OW) + out_y * OW + out_x] = activation_function(sum, activation);
 }
 
 

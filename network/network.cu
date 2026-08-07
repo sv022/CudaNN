@@ -13,6 +13,7 @@
 #include"utils/structure.h"
 #include"utils/logging.h"
 
+#include"loss/loss.cuh"
 #include"dense.cu"
 #include"conv.cu"
 #include"maxpooling.cu"
@@ -23,6 +24,7 @@ class NeuralNetwork
 private:
     float learning_rate;
     std::vector<Layer*> layers;
+    LossType loss_function;
 
     int input_nodes;
     int output_nodes;
@@ -31,7 +33,7 @@ private:
     int getMaxActivationIndex(float *target);
 
     public:
-    NeuralNetwork(float lr);
+    NeuralNetwork(float lr, LossType loss = LossType::MSE);
     NeuralNetwork(const NetworkStructure* structure);
     void add_layer(Layer* Layer);
     void set_learning_rate(float lr);
@@ -46,21 +48,27 @@ private:
 
     void save_weights(std::string path);
     void load_weights(std::string path);
+
+    friend void test_multichannel_softmax_full_pipeline();
+    friend void test_softmax_cce_training_reduces_loss();
+    friend void test_softmax_output_sums_to_one_after_training();
 };
 
-NeuralNetwork::NeuralNetwork(float lr) {
+NeuralNetwork::NeuralNetwork(float lr, LossType loss) {
     learning_rate = lr;
+    loss_function = loss;
     input_nodes = 0;
     output_nodes = 0;
 }
 
 NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
     learning_rate = structure->learning_rate;
+    loss_function = structure->loss_type;
 
     for (LayerStructure* layer : structure->layers) {
         if (layer->layer_type == LayerType::Conv) {
             auto* c = static_cast<ConvStructure*>(layer);
-            Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);
+            Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding, c->activation);
 
             add_layer(conv);
 
@@ -71,7 +79,7 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
 
         } else if (layer->layer_type == LayerType::Dense) {
             auto* d = static_cast<DenseStructure*>(layer);
-            Dense* dense = new Dense(d->input_nodes,d->output_nodes);
+            Dense* dense = new Dense(d->input_nodes,d->output_nodes, d->activation);
 
             add_layer(dense);
 
@@ -116,14 +124,16 @@ void NeuralNetwork::set_learning_rate(float lr){
 float NeuralNetwork::calculateLoss(const float* target_batch, int current_batch_size) {
     const float* output_batch = layers.back()->outputs;
     float loss = 0.0f;
+
     for (int b = 0; b < current_batch_size; ++b) {
         const float* output = output_batch + (size_t)b * output_nodes;
         const float* target = target_batch + (size_t)b * output_nodes;
+
         for (int i = 0; i < output_nodes; ++i) {
-            float diff = target[i] - output[i];
-            loss += 0.5f * diff * diff;
+            loss += loss_value(output[i], target[i], loss_function);
         }
     }
+
     return loss;
 }
 
@@ -158,11 +168,18 @@ void NeuralNetwork::backward(float *inputs, float *targets, int current_batch_si
         output_errors[i] = targets[i] - output[i];
     }
 
+    bool raw_gradient_for_last_layer =
+        (layers.back()->activation == ActivationType::Sigmoid && loss_function == LossType::BinaryCrossEntropy) ||
+        (layers.back()->activation == ActivationType::Softmax && loss_function == LossType::CategoricalCrossEntropy);
+
     float *current_errors = output_errors;
 
     for (int i = num_layers - 1; i >= 0; --i) {
         float *layer_input = (i == 0) ? inputs : layers[i - 1]->outputs;
-        float *prev_errors = layers[i]->backward(layer_input, current_errors);
+
+        float *prev_errors = (i == num_layers - 1)
+            ? layers[i]->backward(layer_input, current_errors, raw_gradient_for_last_layer)
+            : layers[i]->backward(layer_input, current_errors);
 
         if (i != num_layers - 1) {
             free(current_errors);

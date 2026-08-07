@@ -1,6 +1,7 @@
 #pragma once
 #include<vector>
 #include<string>
+#include"../loss/loss.cuh"
 
 
 enum class LayerType
@@ -39,6 +40,7 @@ struct ConvStructure : LayerStructure
 {
     unsigned int input_width;
     unsigned int input_height;
+    ActivationType activation;
 
     unsigned int channels;
     unsigned int num_kernels;
@@ -47,10 +49,10 @@ struct ConvStructure : LayerStructure
     unsigned int stride;
     unsigned int padding;
 
-    ConvStructure() : input_width(0), input_height(0), channels(0), stride(0), padding(0) {
+    ConvStructure() : input_width(0), input_height(0), channels(0), stride(0), padding(0), activation(ActivationType::Linear) {
         layer_type = LayerType::Conv;
     }
-    ConvStructure(int w, int h, int c, int k, int num_k, int s, int p) : input_width(w), input_height(h), channels(c), kernel_size(k), num_kernels(num_k), stride(s), padding(p) {
+    ConvStructure(int w, int h, int c, int k, int num_k, int s, int p, ActivationType act) : input_width(w), input_height(h), channels(c), kernel_size(k), num_kernels(num_k), stride(s), padding(p), activation(act) {
         layer_type = LayerType::Conv;
     }
 };
@@ -59,12 +61,13 @@ struct ConvStructure : LayerStructure
 struct DenseStructure : LayerStructure
 {
     unsigned int input_nodes;
-    unsigned int output_nodes; 
+    unsigned int output_nodes;
+    ActivationType activation;
 
-    DenseStructure() : input_nodes(0), output_nodes(0) {
+    DenseStructure() : input_nodes(0), output_nodes(0), activation(ActivationType::Sigmoid) {
         layer_type = LayerType::Dense;
     }
-    DenseStructure(int i_nodes, int o_nodes) : input_nodes(i_nodes), output_nodes(o_nodes) {
+    DenseStructure(int i_nodes, int o_nodes, ActivationType act): input_nodes(i_nodes), output_nodes(o_nodes), activation(act) {
         layer_type = LayerType::Dense;
     }
 };
@@ -74,19 +77,24 @@ struct NetworkStructure
 {
     std::vector<LayerStructure*> layers;
     float learning_rate;
+    LossType loss_type;
 
-    NetworkStructure(float lr = 0.001f): learning_rate(lr) {} 
+    NetworkStructure(float lr = 0.001f, LossType lt = LossType::MSE): learning_rate(lr), loss_type(lt) {}
 
-    void add_dense(unsigned int input_nodes, unsigned int output_nodes) {
-        layers.push_back(new DenseStructure(input_nodes, output_nodes));
+    void add_dense(unsigned int input_nodes, unsigned int output_nodes, ActivationType activation) {
+        layers.push_back(new DenseStructure(input_nodes, output_nodes, activation));
     }
 
     void add_pool(unsigned int input_width, unsigned int input_height, unsigned int channels, unsigned int pool, unsigned int stride) {
         layers.push_back(new PoolStructure(input_width, input_height, channels, pool, stride));
     }
 
-    void add_conv(unsigned int input_width, unsigned int input_height, unsigned int channels, unsigned int kernel_size, unsigned int num_kernels, unsigned int stride, unsigned int padding){
-        layers.push_back(new ConvStructure(input_width, input_height, channels, kernel_size, num_kernels, stride, padding));
+    void add_conv(unsigned int input_width, unsigned int input_height, 
+        unsigned int channels, unsigned int kernel_size, 
+        unsigned int num_kernels, unsigned int stride, unsigned int padding,
+        ActivationType act
+    ){
+        layers.push_back(new ConvStructure(input_width, input_height, channels, kernel_size, num_kernels, stride, padding, act));
     }
 
     std::string get_structure_string() {
