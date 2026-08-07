@@ -1,17 +1,15 @@
 #include"../../network/network.cu"
-#include <iostream>
-#include <cassert>
-#include <cmath>
 #include <vector>
-#include <string>
+#include <cmath>
+#include <iostream>
 
 static int g_tests_run = 0;
 static int g_tests_failed = 0;
 
 #define CHECK(cond, msg) do { \
-    g_tests_run++; \
-    if (!(cond)) { std::cerr << "[FAIL] " << msg << "\n"; g_tests_failed++; } \
-    else { std::cout << "[ OK ] " << msg << "\n"; } \
+g_tests_run++; \
+if (!(cond)) { std::cerr << "[FAIL] " << msg << "\n"; g_tests_failed++; } \
+else { std::cout << "[ OK ] " << msg << "\n"; } \
 } while(0)
 
 static const int C = 3;
@@ -21,30 +19,28 @@ static const int INPUT_NODES = C * H * W; // 192
 static const int N_CLASSES = 3;
 static const int DATA_SIZE = 45;
 
-NeuralNetwork* build_conv_network(float lr) {
-    NeuralNetwork* net = new NeuralNetwork(lr);
-    Conv* conv = new Conv(/*input_height=*/H, /*input_width=*/W, /*channels=*/C,
-                           /*kernel_size=*/3, /*n_kernels=*/4, /*stride=*/1, /*padding=*/1);
+
+NeuralNetwork* build_conv_network(float lr, ActivationType output_activation = ActivationType::Sigmoid, LossType loss_type = LossType::MSE) {
+    NeuralNetwork* net = new NeuralNetwork(lr, loss_type);
+    Conv* conv = new Conv(H, W, C, 3, 4, 1, 1);
     conv->set_learning_rate(lr);
     net->add_layer(conv);
 
-    MaxPooling* pool = new MaxPooling(/*in_w=*/8, /*in_h=*/8, /*channels=*/4,
-                                       /*pool=*/2, /*s=*/2);
+    MaxPooling* pool = new MaxPooling(8, 8, 4,
+                                       2, 2);
     net->add_layer(pool);
 
-    // Dense: 64 -> 3 (N_CLASSES)
-    Dense* dense = new Dense(/*layer_size=*/4*4*4, /*next_size=*/N_CLASSES);
+    Dense* dense = new Dense(4*4*4, N_CLASSES, output_activation);
     dense->set_learning_rate(lr);
     net->add_layer(dense);
-
     return net;
 }
 
 // ============================================================
-// Test 1: Conv+MaxPooling+Dense 
+// Test 1: Conv+MaxPooling+Dense (Sigmoid+MSE)
 // ============================================================
 void test_multichannel_training_reduces_loss() {
-    const int batch_size = 9; // 45 % 9 == 0, все батчи полные
+    const int batch_size = 9;
     const int epochs = 40;
 
     NeuralNetwork* net = build_conv_network(0.05f);
@@ -54,12 +50,11 @@ void test_multichannel_training_reduces_loss() {
 
     std::cout << "  loss[0]=" << loss_by_epoch[0] << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
 
-    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0],
-          "Conv+MaxPooling+Dense: training loss decreases on 8x8x3 multichannel dataset (batch_size=9)");
+    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0], "Conv+MaxPooling+Dense (Sigmoid+MSE): training loss decreases on 8x8x3 multichannel dataset (batch_size=9)");
 
     bool all_finite = true;
     for (float l : loss_by_epoch) if (!std::isfinite(l)) all_finite = false;
-    CHECK(all_finite, "Conv+MaxPooling+Dense: loss remains finite (no NaN/Inf) throughout training");
+    CHECK(all_finite, "Conv+MaxPooling+Dense (Sigmoid+MSE): loss remains finite (no NaN/Inf) throughout training");
 
     delete net;
 }
@@ -76,15 +71,13 @@ void test_multichannel_uneven_batch() {
 
     net->train("data/multichannel_dataset.csv", DATA_SIZE, epochs, batch_size, loss_by_epoch.data());
 
-    std::cout << "  (uneven, bs=7) loss[0]=" << loss_by_epoch[0]
-              << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
+    std::cout << "  (uneven, bs=7) loss[0]=" << loss_by_epoch[0] << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
 
-    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0],
-          "Conv+MaxPooling+Dense: training loss decreases with uneven batch_size=7 (45%7=3)");
+    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0], "Conv+MaxPooling+Dense (Sigmoid+MSE): training loss decreases with uneven batch_size=7 (45%7=3)");
 
     bool all_finite = true;
     for (float l : loss_by_epoch) if (!std::isfinite(l)) all_finite = false;
-    CHECK(all_finite, "Conv+MaxPooling+Dense: loss remains finite with uneven last batch");
+    CHECK(all_finite, "Conv+MaxPooling+Dense (Sigmoid+MSE): loss remains finite with uneven last batch");
 
     delete net;
 }
@@ -101,11 +94,9 @@ void test_multichannel_batch_size_1() {
 
     net->train("data/multichannel_dataset.csv", DATA_SIZE, epochs, batch_size, loss_by_epoch.data());
 
-    std::cout << "  (bs=1) loss[0]=" << loss_by_epoch[0]
-              << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
+    std::cout << "  (bs=1) loss[0]=" << loss_by_epoch[0] << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
 
-    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0],
-          "Conv+MaxPooling+Dense: training loss decreases with batch_size=1 (legacy-equivalent)");
+    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0], "Conv+MaxPooling+Dense (Sigmoid+MSE): training loss decreases with batch_size=1 (legacy-equivalent)");
 
     delete net;
 }
@@ -124,25 +115,19 @@ void test_multichannel_full_pipeline() {
     std::vector<int> test_targets(DATA_SIZE), test_guesses(DATA_SIZE);
     float accuracy = net->test("data/multichannel_dataset.csv", DATA_SIZE, test_targets.data(), test_guesses.data());
 
-    std::cout << "  final loss: " << loss_by_epoch[epochs-1] << "  test accuracy: " << accuracy*100.0f << "%\n";
+    std::cout << "  final loss: " << loss_by_epoch[epochs-1] << " test accuracy: " << accuracy*100.0f << "%\n";
 
-    CHECK(accuracy > (1.0f / N_CLASSES),
-          "Conv+MaxPooling+Dense: test() accuracy exceeds random-guess baseline (33% for 3 classes) "
-          "-- confirms Conv layer extracts per-channel signal through full batch pipeline");
+    CHECK(accuracy > (1.0f / N_CLASSES), "Conv+MaxPooling+Dense (Sigmoid+MSE): test() accuracy exceeds random-guess baseline (33% for 3 classes) ");
 
-    // predict() напрямую после test() -- проверка перехода batch_size=9 -> 1
-    // (test() сам вызывает set_batch_size(1) на всех слоях, включая Conv/MaxPooling)
     DatasetFile single_check("data/multichannel_dataset.csv", DATA_SIZE, INPUT_NODES, N_CLASSES, 1);
     int direct_prediction = net->predict(single_check.image_batch);
-    CHECK(direct_prediction >= 0 && direct_prediction < N_CLASSES,
-          "Conv+MaxPooling+Dense: predict() after test() returns valid class index "
-          "(batch_size=1 state correctly propagated through Conv and MaxPooling)");
+    CHECK(direct_prediction >= 0 && direct_prediction < N_CLASSES, "Conv+MaxPooling+Dense (Sigmoid+MSE): predict() after test() returns valid class index ");
 
     delete net;
 }
 
 // ============================================================
-// Test 5: change batch_size 
+// Test 5: change batch_size
 // ============================================================
 void test_multichannel_switching_batch_sizes() {
     NeuralNetwork* net = build_conv_network(0.03f);
@@ -157,9 +142,65 @@ void test_multichannel_switching_batch_sizes() {
     for (float l : loss2) if (!std::isfinite(l)) all_finite = false;
     for (float l : loss3) if (!std::isfinite(l)) all_finite = false;
 
-    CHECK(all_finite,
-          "Conv+MaxPooling+Dense: switching batch_size across consecutive train() calls "
-          "(3 -> 9 -> 1) works without errors for full Conv architecture");
+    CHECK(all_finite, "Conv+MaxPooling+Dense (Sigmoid+MSE): switching batch_size across consecutive train() calls ");
+
+    delete net;
+}
+
+// ============================================================
+// Test 6: Conv(ReLU) + MaxPooling + Dense(Softmax) + CCE
+// ============================================================
+void test_multichannel_softmax_output_training_reduces_loss() {
+    const int batch_size = 9;
+    const int epochs = 40;
+
+    NeuralNetwork* net = build_conv_network(0.05f, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
+    std::vector<float> loss_by_epoch(epochs);
+
+    net->train("data/multichannel_dataset.csv", DATA_SIZE, epochs, batch_size, loss_by_epoch.data());
+
+    std::cout << "  (Conv+Pool+Dense[Softmax]+CCE) loss[0]=" << loss_by_epoch[0]
+               << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
+
+    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0],
+        "Conv+MaxPooling+Dense(Softmax)+CategoricalCrossEntropy: training loss decreases "
+        "on 8x8x3 multichannel dataset (batch_size=9)");
+
+    bool all_finite = true;
+    for (float l : loss_by_epoch) if (!std::isfinite(l)) all_finite = false;
+    CHECK(all_finite, "Conv+MaxPooling+Dense(Softmax)+CategoricalCrossEntropy: loss remains finite (no NaN/Inf)");
+
+    delete net;
+}
+
+// ============================================================
+// Test 7: full train -> test -> predict, Conv+Pool+Dense(Softmax)+CCE
+// ============================================================
+void test_multichannel_softmax_full_pipeline() {
+    const int batch_size = 9;
+    const int epochs = 60;
+
+    NeuralNetwork* net = build_conv_network(0.05f, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
+    std::vector<float> loss_by_epoch(epochs);
+    net->train("data/multichannel_dataset.csv", DATA_SIZE, epochs, batch_size, loss_by_epoch.data());
+
+    std::vector<int> test_targets(DATA_SIZE), test_guesses(DATA_SIZE);
+    float accuracy = net->test("data/multichannel_dataset.csv", DATA_SIZE, test_targets.data(), test_guesses.data());
+
+    std::cout << "  (Softmax output) final loss: " << loss_by_epoch[epochs-1] << " test accuracy: " << accuracy*100.0f << "%\n";
+
+    CHECK(accuracy > (1.0f / N_CLASSES), "Conv+MaxPooling+Dense(Softmax)+CategoricalCrossEntropy: test() accuracy exceeds random-guess baseline (33% for 3 classes)");
+
+    DatasetFile single_check("data/multichannel_dataset.csv", DATA_SIZE, INPUT_NODES, N_CLASSES, 1);
+    for (auto &layer : net->layers) layer->set_batch_size(1);
+    net->forward(single_check.image_batch, 1);
+    float* final_output = net->layers.back()->outputs;
+    float sum = 0.0f;
+    for (int j = 0; j < N_CLASSES; ++j) sum += final_output[j];
+    CHECK(std::fabs(sum - 1.0f) < 1e-3f, "Conv+MaxPooling+Dense(Softmax): output sums to 1.0 after batch_size=9->1 transition ");
+
+    int direct_prediction = net->predict(single_check.image_batch);
+    CHECK(direct_prediction >= 0 && direct_prediction < N_CLASSES, "Conv+MaxPooling+Dense(Softmax): predict() after test() returns valid class index");
 
     delete net;
 }
@@ -167,20 +208,26 @@ void test_multichannel_switching_batch_sizes() {
 int main() {
     std::cout << "=== NeuralNetwork multichannel (8x8x3) Conv+MaxPooling+Dense integration tests ===\n\n";
 
-    std::cout << "-- Test 1: training reduces loss on multichannel data --\n";
+    std::cout << "-- Test 1: training reduces loss (Sigmoid+MSE) --\n";
     test_multichannel_training_reduces_loss();
 
-    std::cout << "\n-- Test 2: uneven last batch (Conv+MaxPooling+Dense) --\n";
+    std::cout << "\n-- Test 2: uneven last batch (Sigmoid+MSE) --\n";
     test_multichannel_uneven_batch();
 
-    std::cout << "\n-- Test 3: batch_size=1 (legacy-equivalent, Conv architecture) --\n";
+    std::cout << "\n-- Test 3: batch_size=1 (Sigmoid+MSE, legacy-equivalent) --\n";
     test_multichannel_batch_size_1();
 
-    std::cout << "\n-- Test 4: full train -> test -> predict on multichannel data --\n";
+    std::cout << "\n-- Test 4: full train -> test -> predict (Sigmoid+MSE) --\n";
     test_multichannel_full_pipeline();
 
-    std::cout << "\n-- Test 5: switching batch_size across train() calls (Conv architecture) --\n";
+    std::cout << "\n-- Test 5: switching batch_size across train() calls (Sigmoid+MSE) --\n";
     test_multichannel_switching_batch_sizes();
+
+    std::cout << "\n-- Test 6: training reduces loss (Dense output=Softmax, CategoricalCrossEntropy) --\n";
+    test_multichannel_softmax_output_training_reduces_loss();
+
+    std::cout << "\n-- Test 7: full train -> test -> predict (Dense output=Softmax, CategoricalCrossEntropy) --\n";
+    test_multichannel_softmax_full_pipeline();
 
     std::cout << "\n=== " << g_tests_run << " tests run, " << g_tests_failed << " failed ===\n";
     return g_tests_failed == 0 ? 0 : 1;
