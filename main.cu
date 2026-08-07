@@ -47,19 +47,6 @@ void log_arg_error(std::string arg){
         << "<weights_path> <current_dir>\n";
 }
 
-ActivationType map_activation_type(std::string activation_str) {
-    if (activation_str == "sigmoid") return ActivationType::Sigmoid;
-    if (activation_str == "relu") return ActivationType::ReLU;
-    if (activation_str == "softmax") return ActivationType::Softmax;
-    throw std::runtime_error("Unknown activation function: " + activation_str);
-}
-
-LossType parse_loss_type(std::string loss_str) {
-    if (loss_str == "mse") return LossType::MSE;
-    if (loss_str == "bce") return LossType::BinaryCrossEntropy;
-    if (loss_str == "cce") return LossType::CategoricalCrossEntropy;
-    throw std::runtime_error("Unknown loss function: " + loss_str);
-}
 
 void parse_network_structure(const std::string net_str, float learning_rate, LossType loss, NetworkStructure* net) {
     auto layers = split(net_str, '-');

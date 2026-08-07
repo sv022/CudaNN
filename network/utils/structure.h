@@ -118,7 +118,7 @@ struct NetworkStructure
     }
 
     std::string structure_to_json() {
-        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"layers\": [\n";
+        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"loss_function\": "+ loss_type_to_str(loss_type) + ",\n  \t\t\"layers\": [\n";
         std::string trailing_comma;
         for (size_t i = 0; i < layers.size(); ++i) {
             if (i < layers.size() - 1) trailing_comma = ",";
@@ -133,7 +133,8 @@ struct NetworkStructure
                 json += "\t\t\t\"kernel_size\": " + std::to_string(conv_layer->kernel_size) + ",\n";
                 json += "\t\t\t\"num_kernels\": " + std::to_string(conv_layer->num_kernels) + ",\n";
                 json += "\t\t\t\"stride\": " + std::to_string(conv_layer->stride) + ",\n";
-                json += "\t\t\t\"padding\": " + std::to_string(conv_layer->padding) + "\n\t\t}" + trailing_comma + "\n";
+                json += "\t\t\t\"padding\": " + std::to_string(conv_layer->padding) + ",\n";
+                json += "\t\t\t\"activation\": " + activation_type_to_str(conv_layer->activation) + "\n\t\t}" + trailing_comma + "\n";
             } else if (layers[i]->layer_type == LayerType::Pool) {
                 auto* pool_layer = static_cast<PoolStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"pool\",\n";
@@ -146,7 +147,8 @@ struct NetworkStructure
                 auto* dense_layer = static_cast<DenseStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"dense\",\n";
                 json += "\t\t\t\"input_nodes\": " + std::to_string(dense_layer->input_nodes) + ",\n";
-                json += "\t\t\t\"output_nodes\": " + std::to_string(dense_layer->output_nodes) + "\n\t\t}" + trailing_comma + "\n";
+                json += "\t\t\t\"output_nodes\": " + std::to_string(dense_layer->output_nodes) + ",\n";
+                json += "\t\t\t\"activation\": " + activation_type_to_str(dense_layer->activation) + "\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";
