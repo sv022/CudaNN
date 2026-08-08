@@ -58,15 +58,17 @@ void parse_network_structure(const std::string net_str, float learning_rate, Los
         if (layer.rfind("conv_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
             auto whc = split(parts[0], 'x');
-            if (parts[5] == "softmax") throw std::runtime_error("Softmax not supported for conv layers.");
-            net->add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]), map_activation_type(parts[5]));
+            net->add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]));
         } else if (layer.rfind("pool_", 0) == 0) {
             auto parts = split(layer.substr(5), '_');
             auto whc = split(parts[0], 'x');
             net->add_pool(std::stoi(whc[0]), std::stoi(whc[1]), std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]));
         } else if (layer.rfind("dense_", 0) == 0) {
             auto parts = split(layer.substr(6), '_');
-            net->add_dense(std::stoi(parts[0]), std::stoi(parts[1]), map_activation_type(parts[2]));
+            net->add_dense(std::stoi(parts[0]), std::stoi(parts[1]));
+        } else if (layer.rfind("activation_", 0) == 0) {
+            auto parts = split(layer.substr(11), '_');
+            net->add_activation(0, map_activation_type(parts[0]));
         } else {
             throw std::runtime_error("Unknown layer type: " + layer);
         }

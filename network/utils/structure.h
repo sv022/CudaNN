@@ -8,7 +8,8 @@ enum class LayerType
 {
     Conv,
     Pool,
-    Dense
+    Dense,
+    Activation
 };
 
 struct LayerStructure
@@ -40,7 +41,6 @@ struct ConvStructure : LayerStructure
 {
     unsigned int input_width;
     unsigned int input_height;
-    ActivationType activation;
 
     unsigned int channels;
     unsigned int num_kernels;
@@ -49,10 +49,11 @@ struct ConvStructure : LayerStructure
     unsigned int stride;
     unsigned int padding;
 
-    ConvStructure() : input_width(0), input_height(0), channels(0), stride(0), padding(0), activation(ActivationType::Linear) {
+    ConvStructure() : input_width(0), input_height(0), channels(0), stride(0), padding(0) {
         layer_type = LayerType::Conv;
     }
-    ConvStructure(int w, int h, int c, int k, int num_k, int s, int p, ActivationType act) : input_width(w), input_height(h), channels(c), kernel_size(k), num_kernels(num_k), stride(s), padding(p), activation(act) {
+    ConvStructure(int w, int h, int c, int k, int num_k, int s, int p)
+        : input_width(w), input_height(h), channels(c), kernel_size(k), num_kernels(num_k), stride(s), padding(p) {
         layer_type = LayerType::Conv;
     }
 };
@@ -62,13 +63,25 @@ struct DenseStructure : LayerStructure
 {
     unsigned int input_nodes;
     unsigned int output_nodes;
-    ActivationType activation;
 
-    DenseStructure() : input_nodes(0), output_nodes(0), activation(ActivationType::Sigmoid) {
+    DenseStructure() : input_nodes(0), output_nodes(0) {
         layer_type = LayerType::Dense;
     }
-    DenseStructure(int i_nodes, int o_nodes, ActivationType act): input_nodes(i_nodes), output_nodes(o_nodes), activation(act) {
+    DenseStructure(int i_nodes, int o_nodes) : input_nodes(i_nodes), output_nodes(o_nodes) {
         layer_type = LayerType::Dense;
+    }
+};
+
+struct ActivationStructure : LayerStructure
+{
+    unsigned int size;
+    ActivationType activation_type;
+
+    ActivationStructure() : size(0), activation_type(ActivationType::Linear) {
+        layer_type = LayerType::Activation;
+    }
+    ActivationStructure(unsigned int s, ActivationType act) : size(s), activation_type(act) {
+        layer_type = LayerType::Activation;
     }
 };
 
@@ -81,8 +94,12 @@ struct NetworkStructure
 
     NetworkStructure(float lr = 0.001f, LossType lt = LossType::MSE): learning_rate(lr), loss_type(lt) {}
 
-    void add_dense(unsigned int input_nodes, unsigned int output_nodes, ActivationType activation) {
-        layers.push_back(new DenseStructure(input_nodes, output_nodes, activation));
+    void add_activation(unsigned int size, ActivationType activation) {
+        layers.push_back(new ActivationStructure(size, activation));
+    }
+
+    void add_dense(unsigned int input_nodes, unsigned int output_nodes) {
+        layers.push_back(new DenseStructure(input_nodes, output_nodes));
     }
 
     void add_pool(unsigned int input_width, unsigned int input_height, unsigned int channels, unsigned int pool, unsigned int stride) {
@@ -91,10 +108,9 @@ struct NetworkStructure
 
     void add_conv(unsigned int input_width, unsigned int input_height, 
         unsigned int channels, unsigned int kernel_size, 
-        unsigned int num_kernels, unsigned int stride, unsigned int padding,
-        ActivationType act
+        unsigned int num_kernels, unsigned int stride, unsigned int padding
     ){
-        layers.push_back(new ConvStructure(input_width, input_height, channels, kernel_size, num_kernels, stride, padding, act));
+        layers.push_back(new ConvStructure(input_width, input_height, channels, kernel_size, num_kernels, stride, padding));
     }
 
     std::string get_structure_string() {
@@ -118,7 +134,7 @@ struct NetworkStructure
     }
 
     std::string structure_to_json() {
-        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"loss_function\": "+ loss_type_to_str(loss_type) + ",\n  \t\t\"layers\": [\n";
+        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"layers\": [\n";
         std::string trailing_comma;
         for (size_t i = 0; i < layers.size(); ++i) {
             if (i < layers.size() - 1) trailing_comma = ",";
@@ -133,8 +149,7 @@ struct NetworkStructure
                 json += "\t\t\t\"kernel_size\": " + std::to_string(conv_layer->kernel_size) + ",\n";
                 json += "\t\t\t\"num_kernels\": " + std::to_string(conv_layer->num_kernels) + ",\n";
                 json += "\t\t\t\"stride\": " + std::to_string(conv_layer->stride) + ",\n";
-                json += "\t\t\t\"padding\": " + std::to_string(conv_layer->padding) + ",\n";
-                json += "\t\t\t\"activation\": " + activation_type_to_str(conv_layer->activation) + "\n\t\t}" + trailing_comma + "\n";
+                json += "\t\t\t\"padding\": " + std::to_string(conv_layer->padding) + "\n\t\t}" + trailing_comma + "\n";
             } else if (layers[i]->layer_type == LayerType::Pool) {
                 auto* pool_layer = static_cast<PoolStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"pool\",\n";
@@ -147,8 +162,7 @@ struct NetworkStructure
                 auto* dense_layer = static_cast<DenseStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"dense\",\n";
                 json += "\t\t\t\"input_nodes\": " + std::to_string(dense_layer->input_nodes) + ",\n";
-                json += "\t\t\t\"output_nodes\": " + std::to_string(dense_layer->output_nodes) + ",\n";
-                json += "\t\t\t\"activation\": " + activation_type_to_str(dense_layer->activation) + "\n\t\t}" + trailing_comma + "\n";
+                json += "\t\t\t\"output_nodes\": " + std::to_string(dense_layer->output_nodes) + "\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";

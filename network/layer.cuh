@@ -15,7 +15,7 @@ class Layer
 
     float learning_rate = 0.1;
 
-    ActivationType activation = ActivationType::Linear;
+    ActivationType activation_type = ActivationType::Linear;
 
     float *outputs;
 

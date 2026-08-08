@@ -10,8 +10,7 @@ __global__ void conv_forward_kernel(
     int C, int H, int W,
     int K, int stride, int pad,
     int N, int OH, int OW,
-    int batch_size,
-    ActivationType activation
+    int batch_size
 ){
     int out_x = blockIdx.x * blockDim.x + threadIdx.x;
     int out_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -49,7 +48,7 @@ __global__ void conv_forward_kernel(
             }
         }
     }
-    outputs[(size_t)b * N * OH * OW + n * (OH * OW) + out_y * OW + out_x] = activation_function(sum, activation);
+    outputs[(size_t)b * N * OH * OW + n * (OH * OW) + out_y * OW + out_x] = sum;
 }
 
 

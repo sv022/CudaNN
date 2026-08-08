@@ -19,7 +19,7 @@ class Dense : public Layer
     void free_batch_buffers();
 
     public:
-    Dense(int layer_size, int next_size, ActivationType act);
+    Dense(int layer_size, int next_size);
     ~Dense();
 
     void set_batch_size(int bs) override;
@@ -47,11 +47,9 @@ class Dense : public Layer
 };
 
 
-Dense::Dense(int layer_size, int next_size, ActivationType act){
+Dense::Dense(int layer_size, int next_size){
     size = layer_size;
     output_size = next_size;
-
-    activation = act;
 
     batch_size = 1;
     outputs = (float*)malloc(sizeof(float) * (size_t)batch_size * output_size);
@@ -137,42 +135,19 @@ void Dense::forward(float *inputs) {
         (batch_size + THREADS.y - 1) / THREADS.y
     );
 
-    if (activation == ActivationType::Softmax) {
-        Kernel::dot_bias_activation<<<weightsBlocksPerGrid, THREADS>>>(
-            d_inputs, d_weights, d_biases, d_outputs, batch_size, in_size, out_size,
-            ActivationType::Linear
-        );
-        cudaDeviceSynchronize();
-
-        int threads_per_row = 32;
-        while (threads_per_row < out_size && threads_per_row < 1024) {
-            threads_per_row *= 2;
-        }
-        size_t shared_mem_bytes = sizeof(float) * threads_per_row;
-        Kernel::softmax_forward<<<batch_size, threads_per_row, shared_mem_bytes>>>(
-            d_outputs, d_outputs, batch_size, out_size
-        );
-    } else {
-        Kernel::dot_bias_activation<<<weightsBlocksPerGrid, THREADS>>>(
-            d_inputs, d_weights, d_biases, d_outputs, batch_size, in_size, out_size, activation
-        );
-    }
+    Kernel::dot_bias<<<weightsBlocksPerGrid, THREADS>>>(d_inputs, d_weights, d_biases, d_outputs, batch_size, in_size, out_size);
 
     cudaDeviceSynchronize();
     cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-float* Dense::backward(float *inputs, float *next_errors, bool raw_gradient) {
+float* Dense::backward(float *inputs, float *next_errors, bool) {
     int in_size = size, out_size = output_size;
     size_t total_out = (size_t)batch_size * out_size;
     size_t total_in = (size_t)batch_size * in_size;
 
-    if (activation == ActivationType::Softmax && !raw_gradient) assert(false && "Softmax activation without raw_gradient is unsupported");
-
     float *local_grad = (float*)malloc(sizeof(float) * total_out);
-
-    if (raw_gradient) memcpy(local_grad, next_errors, sizeof(float) * total_out);
-    else for (size_t i = 0; i < total_out; ++i) local_grad[i] = activation_derivative(next_errors[i], outputs[i], activation);
+    memcpy(local_grad, next_errors, sizeof(float) * total_out);
 
     cudaMemcpy(d_inputs, inputs, total_in * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_local_grad, local_grad, total_out * sizeof(float), cudaMemcpyHostToDevice);

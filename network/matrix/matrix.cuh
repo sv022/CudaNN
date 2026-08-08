@@ -8,7 +8,7 @@
 #define KERNEL_H
 namespace Kernel {
     __global__ void dot(float *a, float *b, float *c, int M, int N, int P);
-    __global__ void dot_bias_activation(float *a, float *b, float *d, float *c, int M, int N, int P, ActivationType act);
+    __global__ void dot_bias(float *a, float *b, float *d, float *c, int M, int N, int P);
     __global__ void softmax_forward(float *z, float *output, int batch_size, int out_size);
     __global__ void add(float *a, float *b, float *c, int R, int C);
     __global__ void multadd(float *a, float *b, float *c, int R, int C, float k);
@@ -165,9 +165,9 @@ __global__ void Kernel::dot(
         c[row * P + col] = sum;
     }
 }
-__global__ void Kernel::dot_bias_activation(
+__global__ void Kernel::dot_bias(
     float *a, float *b, float *d, float *c,
-    int M, int N, int P, ActivationType act
+    int M, int N, int P
 ) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -177,7 +177,7 @@ __global__ void Kernel::dot_bias_activation(
         for (int k = 0; k < N; k++) {
             sum += a[row * N + k] * b[k * P + col];
         }
-        c[row * P + col] = activation_function(sum + d[col], act);
+        c[row * P + col] = sum + d[col];
     }
 }
 __global__ void Kernel::softmax_forward(float *z, float *output, int batch_size, int out_size) {

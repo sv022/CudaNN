@@ -19,7 +19,7 @@ class Conv : public Layer
 
     public:
     Conv(int input_height, int input_width, int channels, int kernel_size,
-         int n_kernels = 1, int stride = 1, int padding = 0, ActivationType activation = ActivationType::ReLU);
+         int n_kernels = 1, int stride = 1, int padding = 0);
     ~Conv();
 
     void set_batch_size(int bs) override;
@@ -41,12 +41,10 @@ class Conv : public Layer
 };
 
 
-Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, int padding, ActivationType act) {
+Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, int padding) {
     input_width = input_w; 
     input_height = input_h; 
     channels = c;
-
-    activation = act;
 
     size = input_w * input_h * channels;
     kernel_size = k; 
@@ -150,14 +148,14 @@ void Conv::forward(float* inputs) {
         channels, input_height, input_width,
         kernel_size, stride, padding,
         num_kernels, output_height, output_width,
-        batch_size, activation
+        batch_size
     );
 
     cudaDeviceSynchronize();
     cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-float* Conv::backward(float* inputs, float* next_errors, bool raw_gradient) {
+float* Conv::backward(float* inputs, float* next_errors, bool /*raw_gradient*/) {
     int input_size_per_image = channels * input_height * input_width;
     int kernel_total = num_kernels * channels * kernel_size * kernel_size;
     int output_size_per_image = num_kernels * output_height * output_width;
@@ -165,9 +163,7 @@ float* Conv::backward(float* inputs, float* next_errors, bool raw_gradient) {
     size_t total_output_size = (size_t)batch_size * output_size_per_image;
 
     float* local_grad = (float*) malloc(sizeof(float) * total_output_size);
-    if (raw_gradient) for (size_t i = 0; i < total_output_size; ++i) local_grad[i] = next_errors[i];
-    else for (size_t i = 0; i < total_output_size; ++i) local_grad[i] = activation_derivative(next_errors[i], outputs[i], activation);
-    
+    memcpy(local_grad, next_errors, sizeof(float) * total_output_size);
 
     cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_local_grad, local_grad, total_output_size * sizeof(float), cudaMemcpyHostToDevice);
@@ -218,7 +214,6 @@ float* Conv::backward(float* inputs, float* next_errors, bool raw_gradient) {
     free(local_grad);
     return prev_errors;
 }
-
 
 void Conv::save_weights(std::string path) {
     std::ofstream file(path, std::ios::binary | std::ios::app);
