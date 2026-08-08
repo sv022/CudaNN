@@ -2,7 +2,6 @@
 #include <vector>
 #include <cmath>
 #include <iostream>
-#include <algorithm>
 
 static int g_tests_run = 0;
 static int g_tests_failed = 0;
@@ -13,13 +12,13 @@ if (!(cond)) { std::cerr << "[FAIL] " << msg << "\n"; g_tests_failed++; } \
 else { std::cout << "[ OK ] " << msg << "\n"; } \
 } while(0)
 
-
-NeuralNetwork* build_network(int input_nodes, int hidden, int output_nodes, float lr, ActivationType output_activation = ActivationType::Sigmoid, LossType loss_type = LossType::MSE) {
-    NeuralNetwork* net = new NeuralNetwork(lr, loss_type);
-    net->add_layer(new Dense(input_nodes, hidden, ActivationType::Sigmoid));
-    Dense* output_layer = new Dense(hidden, output_nodes, output_activation);
-    net->add_layer(output_layer);
-    return net;
+NeuralNetwork* build_network(int input_nodes, int hidden, int output_nodes, float lr, ActivationType hidden_activation = ActivationType::Sigmoid, ActivationType output_activation = ActivationType::Sigmoid, LossType loss_type = LossType::MSE) {
+    NetworkStructure structure(lr, loss_type);
+    structure.add_dense(input_nodes, hidden);
+    structure.add_activation(hidden, hidden_activation);
+    structure.add_dense(hidden, output_nodes);
+    structure.add_activation(output_nodes, output_activation);
+    return new NeuralNetwork(&structure);
 }
 
 // ============================================================
@@ -68,7 +67,7 @@ void test_training_batch_size_1() {
 }
 
 // ============================================================
-// Test 4: train -> test -> predict, accuracy < 25%
+// Test 4: train -> test -> predict
 // ============================================================
 void test_full_pipeline_train_then_test() {
     const int input_nodes=8, output_nodes=4, hidden=8, data_size=40, batch_size=8, epochs=60;
@@ -106,27 +105,27 @@ void test_switching_batch_sizes_across_train_calls() {
 }
 
 // ============================================================
-// НОВЫЙ Test 6: Softmax + CategoricalCrossEntropy
+// Test 6: Softmax + CategoricalCrossEntropy -- loss decreases
 // ============================================================
 void test_softmax_cce_training_reduces_loss() {
     const int input_nodes=8, output_nodes=4, hidden=6, data_size=40, batch_size=8, epochs=30;
-    NeuralNetwork* net = build_network(input_nodes, hidden, output_nodes, 0.01f, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
+    NeuralNetwork* net = build_network(input_nodes, hidden, output_nodes, 0.01f, ActivationType::ReLU, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
     std::vector<float> loss_by_epoch(epochs);
     net->train("data/synthetic_dataset-2.csv", data_size, epochs, batch_size, loss_by_epoch.data());
-    std::cout << "  (Softmax+CCE) loss[0]=" << loss_by_epoch[0] << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
-    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0], "Softmax+CategoricalCrossEntropy: training loss decreases (batch_size=8, all batches full)");
+    std::cout << "  (ReLU+Softmax+CCE) loss[0]=" << loss_by_epoch[0] << " loss[" << epochs-1 << "]=" << loss_by_epoch[epochs-1] << "\n";
+    CHECK(loss_by_epoch[epochs-1] < loss_by_epoch[0], "ReLU hidden + Softmax output + CategoricalCrossEntropy: training loss decreases");
     bool all_finite = true;
     for (float l : loss_by_epoch) if (!std::isfinite(l)) all_finite = false;
-    CHECK(all_finite, "Softmax+CategoricalCrossEntropy: loss remains finite (no NaN/Inf) throughout training");
+    CHECK(all_finite, "ReLU+Softmax+CCE: loss remains finite (no NaN/Inf) ");
     delete net;
 }
 
 // ============================================================
-// НОВЫЙ Test 7: Softmax output sums to 1 after training (structural invariant)
+// Test 7: Softmax output sums to 1 after training
 // ============================================================
 void test_softmax_output_sums_to_one_after_training() {
     const int input_nodes=8, output_nodes=4, hidden=6, data_size=40, batch_size=8, epochs=20;
-    NeuralNetwork* net = build_network(input_nodes, hidden, output_nodes, 0.05f, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
+    NeuralNetwork* net = build_network(input_nodes, hidden, output_nodes, 0.05f, ActivationType::ReLU, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
     std::vector<float> loss_by_epoch(epochs);
     net->train("data/synthetic_dataset-2.csv", data_size, epochs, batch_size, loss_by_epoch.data());
 
@@ -138,7 +137,9 @@ void test_softmax_output_sums_to_one_after_training() {
     float sum = 0.0f;
     for (int j = 0; j < output_nodes; ++j) sum += final_output[j];
 
-    CHECK(std::fabs(sum - 1.0f) < 1e-3f, "Softmax+CategoricalCrossEntropy: output layer sums to 1.0 after training");
+    CHECK(std::fabs(sum - 1.0f) < 1e-3f,
+        "Softmax Activation layer: output sums to 1.0 after training "
+        "(structural invariant holds through full train/forward pipeline with separated Activation layer)");
     delete net;
 }
 
@@ -147,19 +148,20 @@ void test_softmax_output_sums_to_one_after_training() {
 // ============================================================
 void test_softmax_cce_full_pipeline_accuracy() {
     const int input_nodes=8, output_nodes=4, hidden=8, data_size=40, batch_size=8, epochs=60;
-    NeuralNetwork* net = build_network(input_nodes, hidden, output_nodes, 0.05f, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
+    NeuralNetwork* net = build_network(input_nodes, hidden, output_nodes, 0.05f, ActivationType::ReLU, ActivationType::Softmax, LossType::CategoricalCrossEntropy);
     std::vector<float> loss_by_epoch(epochs);
     net->train("data/synthetic_dataset-2.csv", data_size, epochs, batch_size, loss_by_epoch.data());
 
     std::vector<int> test_targets(data_size), test_guesses(data_size);
     float accuracy = net->test("data/synthetic_dataset-2.csv", data_size, test_targets.data(), test_guesses.data());
-    std::cout << "  (Softmax+CCE) final loss: " << loss_by_epoch[epochs-1] << " test accuracy: " << accuracy*100.0f << "%\n";
-    CHECK(accuracy > 0.25f, "Softmax+CategoricalCrossEntropy: test() accuracy exceeds random-guess baseline (25% for 4 classes)");
+    std::cout << "  (Softmax) final loss: " << loss_by_epoch[epochs-1] << " test accuracy: " << accuracy*100.0f << "%\n";
+    CHECK(accuracy > 0.25f,
+        "ReLU+Softmax+CCE: test() accuracy exceeds random-guess baseline (25% for 4 classes)");
     delete net;
 }
 
 int main() {
-    std::cout << "=== NeuralNetwork FULL pipeline integration tests ===\n\n";
+    std::cout << "=== NeuralNetwork FULL pipeline integration tests (separated Activation layer) ===\n\n";
 
     std::cout << "-- Test 1: training reduces loss (Sigmoid+MSE) --\n";
     test_training_reduces_loss();
@@ -176,13 +178,13 @@ int main() {
     std::cout << "\n-- Test 5: switching batch_size across train() calls (Sigmoid+MSE) --\n";
     test_switching_batch_sizes_across_train_calls();
 
-    std::cout << "\n-- Test 6: training reduces loss (Softmax+CategoricalCrossEntropy) --\n";
+    std::cout << "\n-- Test 6: training reduces loss (ReLU hidden + Softmax output + CCE) --\n";
     test_softmax_cce_training_reduces_loss();
 
-    std::cout << "\n-- Test 7: Softmax output sums to 1 after full training pipeline --\n";
+    std::cout << "\n-- Test 7: Softmax Activation layer sums to 1 after full training pipeline --\n";
     test_softmax_output_sums_to_one_after_training();
 
-    std::cout << "\n-- Test 8: full train -> test pipeline accuracy (Softmax+CategoricalCrossEntropy) --\n";
+    std::cout << "\n-- Test 8: full train -> test pipeline accuracy (ReLU + Softmax + CCE) --\n";
     test_softmax_cce_full_pipeline_accuracy();
 
     std::cout << "\n=== " << g_tests_run << " tests run, " << g_tests_failed << " failed ===\n";
