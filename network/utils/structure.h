@@ -163,6 +163,10 @@ struct NetworkStructure
                 json += "\t\t\t\"type\": \"dense\",\n";
                 json += "\t\t\t\"input_nodes\": " + std::to_string(dense_layer->input_nodes) + ",\n";
                 json += "\t\t\t\"output_nodes\": " + std::to_string(dense_layer->output_nodes) + "\n\t\t}" + trailing_comma + "\n";
+            } else if (layers[i]->layer_type == LayerType::Activation) {
+                auto* activation_layer = static_cast<ActivationStructure*>(layers[i]);
+                json += "\t\t\t\"type\": \"activation\",\n";
+                json += "\t\t\t\"activation_type\": " + activation_type_to_str(activation_layer->activation_type) + "\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";
