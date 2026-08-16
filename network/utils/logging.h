@@ -1,6 +1,6 @@
 #pragma once
 #include<iostream>
-#define LOG 1
+#define LOG 0
 
 void log_train_process(int epochs, int current_epoch, int batches, int current_batch, float epoch_loss){
     if (!LOG) return;

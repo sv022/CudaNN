@@ -1,5 +1,5 @@
 #include <utility>
-#include"layer.cu"
+#include"layer.cuh"
 
 
 class Dense : public Layer
@@ -25,7 +25,7 @@ class Dense : public Layer
     void set_batch_size(int bs) override;
     void sync_weights_to_device();
 
-    float* backward(float *inputs, float *targets);
+    float* backward(float *inputs, float *next_errors, bool raw_gradient = false) override;
     void forward(float *inputs) override;
 
     void save_weights(std::string path) override;
@@ -37,6 +37,13 @@ class Dense : public Layer
 
     friend void test_dense_save_load_roundtrip();
     friend void test_multi_layer_save_load_offsets();
+
+    friend void test_sigmoid_forward_backward();
+    friend void test_relu_forward_backward();
+    friend void test_linear_forward_backward();
+    friend void test_softmax_forward_sums_to_one();
+    friend void run_softmax_backward_without_raw_gradient_should_abort();
+    friend void test_softmax_backward_with_raw_gradient();
 };
 
 
@@ -128,25 +135,19 @@ void Dense::forward(float *inputs) {
         (batch_size + THREADS.y - 1) / THREADS.y
     );
 
-    Kernel::dot_bias_softmax<<<weightsBlocksPerGrid, THREADS>>>(
-        d_inputs, d_weights, d_biases, d_outputs,
-        batch_size, in_size, out_size
-    );
+    Kernel::dot_bias<<<weightsBlocksPerGrid, THREADS>>>(d_inputs, d_weights, d_biases, d_outputs, batch_size, in_size, out_size);
 
     cudaDeviceSynchronize();
     cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-
-float* Dense::backward(float *inputs, float *next_errors) {
+float* Dense::backward(float *inputs, float *next_errors, bool) {
     int in_size = size, out_size = output_size;
     size_t total_out = (size_t)batch_size * out_size;
     size_t total_in = (size_t)batch_size * in_size;
 
     float *local_grad = (float*)malloc(sizeof(float) * total_out);
-    for (size_t i = 0; i < total_out; ++i) {
-        local_grad[i] = next_errors[i] * outputs[i] * (1.0f - outputs[i]);
-    }
+    memcpy(local_grad, next_errors, sizeof(float) * total_out);
 
     cudaMemcpy(d_inputs, inputs, total_in * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_local_grad, local_grad, total_out * sizeof(float), cudaMemcpyHostToDevice);
@@ -201,7 +202,6 @@ float* Dense::backward(float *inputs, float *next_errors) {
 
     std::swap(d_weights, d_weights_updated);
     std::swap(d_biases, d_biases_updated);
-
 
     cudaMemcpy(weights, d_weights, in_size * out_size * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(biases, d_biases, out_size * sizeof(float), cudaMemcpyDeviceToHost);

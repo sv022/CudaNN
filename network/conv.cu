@@ -1,5 +1,4 @@
-#include"layer.cu"
-#include"convolution/convolution.cuh"
+#include"layer.cuh"
 
 
 class Conv : public Layer
@@ -26,7 +25,7 @@ class Conv : public Layer
     void set_batch_size(int bs) override;
     void sync_weights_to_device();
 
-    float* backward(float *inputs, float *targets);
+    float* backward(float *inputs, float *targets, bool);
     void forward(float *inputs) override;
 
     void save_weights(std::string path) override;
@@ -156,7 +155,7 @@ void Conv::forward(float* inputs) {
     cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-float* Conv::backward(float* inputs, float* next_errors) {
+float* Conv::backward(float* inputs, float* next_errors, bool /*raw_gradient*/) {
     int input_size_per_image = channels * input_height * input_width;
     int kernel_total = num_kernels * channels * kernel_size * kernel_size;
     int output_size_per_image = num_kernels * output_height * output_width;
@@ -164,10 +163,7 @@ float* Conv::backward(float* inputs, float* next_errors) {
     size_t total_output_size = (size_t)batch_size * output_size_per_image;
 
     float* local_grad = (float*) malloc(sizeof(float) * total_output_size);
-    for (size_t i = 0; i < total_output_size; ++i) {
-        float relu_derivative = (outputs[i] > 0.0f) ? 1.0f : 0.0f;
-        local_grad[i] = next_errors[i] * relu_derivative;
-    }
+    memcpy(local_grad, next_errors, sizeof(float) * total_output_size);
 
     cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_local_grad, local_grad, total_output_size * sizeof(float), cudaMemcpyHostToDevice);
@@ -218,7 +214,6 @@ float* Conv::backward(float* inputs, float* next_errors) {
     free(local_grad);
     return prev_errors;
 }
-
 
 void Conv::save_weights(std::string path) {
     std::ofstream file(path, std::ios::binary | std::ios::app);

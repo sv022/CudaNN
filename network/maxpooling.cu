@@ -1,5 +1,5 @@
-#include"layer.cu"
-#include"convolution/pooling.cuh"
+#include"layer.cuh"
+
 
 class MaxPooling : public Layer
 {
@@ -23,7 +23,7 @@ class MaxPooling : public Layer
     void set_batch_size(int bs) override;
 
     void forward(float *inputs) override;
-    float* backward(float *inputs, float *targets) override;
+    float* backward(float *inputs, float *targets, bool) override;
 
     ~MaxPooling();
 
@@ -125,7 +125,7 @@ void MaxPooling::forward(float* inputs) {
     cudaMemcpy(max_indices, d_indices, total_output_size * sizeof(int), cudaMemcpyDeviceToHost);
 }
 
-float* MaxPooling::backward(float* inputs, float* next_errors) {
+float* MaxPooling::backward(float* inputs, float* next_errors, bool raw_gradient) {
     int input_size_per_image  = channels * input_height * input_width;
     int output_size_per_image = channels * output_height * output_width;
     size_t total_input_size  = (size_t)batch_size * input_size_per_image;
