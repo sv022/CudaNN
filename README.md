@@ -24,14 +24,14 @@ To configure network structure, a `layer_config_string` is used. It contains inf
 Example of a config string with a visualisation:
 
 ```sh
-conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10
+conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dense_256_10-activation_softmax
 ```
 
 ![Network structure visualisation](data/img/conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10.png)
 
 Args list for training:
 ```sh
-<mode (TRAIN=1)> <layer_config_string> <learning_rate> <batch_size> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
+<mode (TRAIN=1)> <layer_config_string> <learning_rate> <loss_function> <batch_size> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
 ```
 
 `<current_dir>` is where results will be saved in `./runs` subdirectory.
@@ -48,5 +48,5 @@ Args list for testing:
 Example:
 
 ```sh
-.\network.exe 1 "conv_28x28x1_3_16_1_0-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-pool_11x11x32_2_2-dense_800_256-dense_256_10" 0.001 128 5 60000 10000 C:/Users/YOURUSERNAME/mnist_digits_train_60000.csv C:/Users/YOURUSERNAME/mnist_digits_test_10000.csv 1 - C:/Users/YOURUSERNAME/network
+.\network.exe 1 "conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dense_256_10-activation_softmax" 0.001 cce 128 5 60000 10000 C:/Users/YOURUSERNAME/mnist_digits_train_60000.csv C:/Users/YOURUSERNAME/mnist_digits_test_10000.csv 1 - C:/Users/YOURUSERNAME/network
 ```
