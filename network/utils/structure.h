@@ -9,7 +9,8 @@ enum class LayerType
     Conv,
     Pool,
     Dense,
-    Activation
+    Activation,
+    Dropout
 };
 
 struct LayerStructure
@@ -85,6 +86,19 @@ struct ActivationStructure : LayerStructure
     }
 };
 
+struct DropoutStructure : LayerStructure
+{
+    unsigned int size;
+    float drop_prob;
+
+    DropoutStructure() : size(0), drop_prob(0.5f) {
+        layer_type = LayerType::Dropout;
+    }
+    DropoutStructure(unsigned int s, float p) : size(s), drop_prob(p) {
+        layer_type = LayerType::Dropout;
+    }
+};
+
 
 struct NetworkStructure
 {
@@ -93,6 +107,10 @@ struct NetworkStructure
     LossType loss_type;
 
     NetworkStructure(float lr = 0.001f, LossType lt = LossType::MSE): learning_rate(lr), loss_type(lt) {}
+
+    void add_dropout(unsigned int size, float drop_prob) {
+        layers.push_back(new DropoutStructure(size, drop_prob));
+    }
 
     void add_activation(unsigned int size, ActivationType activation) {
         layers.push_back(new ActivationStructure(size, activation));

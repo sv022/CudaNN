@@ -18,6 +18,7 @@
 #include"conv.cu"
 #include"maxpooling.cu"
 #include"activation.cu"
+#include"dropout.cu"
 
 
 class NeuralNetwork 
@@ -38,6 +39,8 @@ private:
     NeuralNetwork(const NetworkStructure* structure);
     void add_layer(Layer* Layer);
     void set_learning_rate(float lr);
+    void set_batch_size(int bs);
+    void set_is_training(bool training);
 
     void forward(float *inputs, int current_batch_size);
     void backward(float *inputs, float *targets, int current_batch_size);
@@ -53,6 +56,8 @@ private:
     friend void test_multichannel_softmax_full_pipeline();
     friend void test_softmax_cce_training_reduces_loss();
     friend void test_softmax_output_sums_to_one_after_training();
+    friend void test_is_training_switches_behavior();
+    friend void test_repeated_train_after_test_reenables_training_mode();
 };
 
 NeuralNetwork::NeuralNetwork(float lr, LossType loss) {
@@ -96,6 +101,21 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
             Activation* activation = new Activation(inferred_size, a->activation_type);
             add_layer(activation);
 
+        } else if (layer->layer_type == LayerType::Dropout) {
+            auto* dr = static_cast<DropoutStructure*>(layer);
+
+            int inferred_size = dr->size;
+            if (inferred_size == 0) {
+                if (layers.empty()) {
+                    std::cerr << "Dropout layer cannot be the first layer in the network." << std::endl;
+                    std::exit(1);
+                }
+                inferred_size = layers.back()->output_size;
+            }
+
+            Dropout* dropout = new Dropout(inferred_size, dr->drop_prob);
+            add_layer(dropout);
+
         } else {
             std::cerr << "Unknown layer type in NetworkStructure" << std::endl;
             std::exit(1);
@@ -133,6 +153,14 @@ void NeuralNetwork::add_layer(Layer* layer){
 
 void NeuralNetwork::set_learning_rate(float lr){
     for (auto &layer : layers) layer->set_learning_rate(lr);
+}
+
+void NeuralNetwork::set_is_training(bool training) {
+    for (auto* layer : layers) layer->set_is_training(training);
+}
+
+void NeuralNetwork::set_batch_size(int bs) {
+    for (auto* layer : layers) layer->set_batch_size(bs);
 }
 
 float NeuralNetwork::calculateLoss(const float* target_batch, int current_batch_size) {
@@ -216,6 +244,8 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
     float epoch_loss = 0.0f;
     int last_batch_size_set = -1;
 
+    set_is_training(true);
+
     for (int epoch = 1; epoch <= epochs; epoch++) {
 
         float total_loss = 0.0f;
@@ -253,6 +283,7 @@ float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets
     DatasetFile test_file(filePath, data_size, input_nodes, output_nodes, 1);
 
     for (auto &layer : layers) layer->set_batch_size(1);
+    set_is_training(false);
 
     int correctGuesses = 0;
     int progress_tick = data_size / 100;
