@@ -1,5 +1,4 @@
 #pragma once
-#include"../activation/activation.cuh"
 
 
 __global__ void conv_forward_kernel(
