@@ -152,7 +152,7 @@ struct NetworkStructure
     }
 
     std::string structure_to_json() {
-        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"layers\": [\n";
+        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"loss_function\":" + loss_type_to_str(loss_type) + ",\n  \t\t\"layers\": [\n";
         std::string trailing_comma;
         for (size_t i = 0; i < layers.size(); ++i) {
             if (i < layers.size() - 1) trailing_comma = ",";
@@ -185,6 +185,10 @@ struct NetworkStructure
                 auto* activation_layer = static_cast<ActivationStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"activation\",\n";
                 json += "\t\t\t\"activation_type\": " + activation_type_to_str(activation_layer->activation_type) + "\n\t\t}" + trailing_comma + "\n";
+            } else if (layers[i]->layer_type == LayerType::Dropout) {
+                auto* dropout_layer = static_cast<DropoutStructure*>(layers[i]);
+                json += "\t\t\t\"type\": \"dropout\",\n";
+                json += "\t\t\t\"p\": " + std::to_string(dropout_layer->drop_prob) + "\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";
@@ -196,3 +200,33 @@ struct NetworkStructure
     }
 };
 
+
+void parse_network_structure(const std::string net_str, float learning_rate, LossType loss, NetworkStructure* net) {
+    auto layers = split(net_str, '-');
+
+    net->learning_rate = learning_rate;
+    net->loss_type = loss;
+
+    for (const auto& layer : layers) {
+        if (layer.rfind("conv_", 0) == 0) {
+            auto parts = split(layer.substr(5), '_');
+            auto whc = split(parts[0], 'x');
+            net->add_conv(std::stoi(whc[0]), std::stoi(whc[1]),  std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]), std::stoi(parts[3]), std::stoi(parts[4]));
+        } else if (layer.rfind("pool_", 0) == 0) {
+            auto parts = split(layer.substr(5), '_');
+            auto whc = split(parts[0], 'x');
+            net->add_pool(std::stoi(whc[0]), std::stoi(whc[1]), std::stoi(whc[2]), std::stoi(parts[1]), std::stoi(parts[2]));
+        } else if (layer.rfind("dense_", 0) == 0) {
+            auto parts = split(layer.substr(6), '_');
+            net->add_dense(std::stoi(parts[0]), std::stoi(parts[1]));
+        } else if (layer.rfind("activation_", 0) == 0) {
+            auto parts = split(layer.substr(11), '_');
+            net->add_activation(0, map_activation_type(parts[0]));
+        } else if (layer.rfind("dropout_", 0) == 0) {
+            auto parts = split(layer.substr(8), '_');
+            net->add_dropout(0, std::stof(parts[0]));
+        } else {
+            throw std::runtime_error("Unknown layer type: " + layer);
+        }
+    }
+}
