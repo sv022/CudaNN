@@ -45,7 +45,7 @@ private:
     void forward(float *inputs, int current_batch_size);
     void backward(float *inputs, float *targets, int current_batch_size);
     int predict(float *input);
-    void train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch);
+    void train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction = 0.1f);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
     void log_structure();
@@ -234,23 +234,27 @@ void NeuralNetwork::backward(float *inputs, float *targets, int current_batch_si
 }
 
 
-void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch){
-    DatasetFile train_file(data, data_size, input_nodes, output_nodes, batch_size);
+void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction) {
+    DatasetFile train_file(data, data_size, input_nodes, output_nodes, batch_size, val_fraction);
 
-    int num_batches = train_file.get_num_batches();
+    int num_batches = train_file.get_train_num_batches();
     int progress_tick = num_batches / 100;
     if (num_batches < 100) progress_tick = 1;
+
+    int val_num_batches = train_file.get_val_num_batches();
 
     float epoch_loss = 0.0f;
     int last_batch_size_set = -1;
 
-    set_is_training(true);
+    bool do_validation = (val_fraction > 0.0f) && train_file.has_val();
 
     for (int epoch = 1; epoch <= epochs; epoch++) {
 
-        float total_loss = 0.0f;
-
+        set_is_training(true);
+        train_file.use_train();
         train_file.shuffle();
+
+        float total_loss = 0.0f;
 
         for (int b = 0; b < num_batches; b++) {
             if (b > 0) train_file.next_batch();
@@ -269,13 +273,46 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
 
             backward(train_file.image_batch, train_file.target_batch, current_batch_size);
 
-            if (b % progress_tick == 0 && b != 0){
+            if (b % progress_tick == 0 && b != 0) {
                 log_train_process(epochs, epoch, num_batches, b, epoch_loss);
             }
         }
 
-        epoch_loss = total_loss / (float)(data_size);
-        loss_by_epoch[epoch - 1] = epoch_loss;
+        float train_epoch_loss = total_loss / (float)(train_file.get_train_size());
+
+        if (!do_validation) {
+            loss_by_epoch[epoch - 1] = train_epoch_loss;
+            epoch_loss = train_epoch_loss;
+            continue;
+        }
+
+        set_is_training(false);
+        train_file.use_val();
+
+        float val_total_loss = 0.0f;
+
+        for (int b = 0; b < val_num_batches; b++) {
+            if (b > 0) train_file.next_batch();
+
+            int current_batch_size = train_file.current_batch_size;
+
+            if (current_batch_size != last_batch_size_set) {
+                for (auto &layer : layers) layer->set_batch_size(current_batch_size);
+                last_batch_size_set = current_batch_size;
+            }
+
+            forward(train_file.image_batch, current_batch_size);
+
+            float batch_loss = calculateLoss(train_file.target_batch, current_batch_size);
+            val_total_loss += batch_loss;
+        }
+
+        float val_epoch_loss = val_total_loss / (float)(train_file.get_val_size());
+
+        loss_by_epoch[epoch - 1] = val_epoch_loss;
+        epoch_loss = val_epoch_loss;
+
+        set_is_training(true);
     }
 }
 

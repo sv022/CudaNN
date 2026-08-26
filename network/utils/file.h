@@ -51,10 +51,19 @@ private:
     std::vector<int> indices;
     std::mt19937 rng;
 
-    void LoadData();
+    int train_size;
+    int val_size;
+    int train_num_batches;
+    int val_num_batches;
+    bool val_mode;
+
     void LoadDataCSV();
     void gather_batch(int start_pos, int count);
     void allocate_batch_buffers();
+    void build_split(float val_fraction);
+
+    int range_offset() const { return val_mode ? train_size : 0; }
+    int range_size() const { return val_mode ? val_size : train_size; }
 
 public:
     float *image_batch;
@@ -62,7 +71,7 @@ public:
 
     int current_batch_size;
 
-    DatasetFile(std::string filepath, int data_size, int inodes, int onodes, int batch_size_);
+    DatasetFile(std::string filepath, int data_size, int inodes, int onodes, int batch_size_, float val_fraction = 0.0f, unsigned int seed = 12345);
     ~DatasetFile();
 
     void next_batch();
@@ -70,24 +79,32 @@ public:
     void reset();
     void shuffle();
 
-    int get_num_batches() const { return num_batches; }
+    void use_train();
+    void use_val();
+    bool has_val() const { return val_size > 0; }
+
+    int get_num_batches() const { return val_mode ? val_num_batches : train_num_batches; }
+    int get_train_num_batches() const { return train_num_batches; }
+    int get_val_num_batches() const { return val_num_batches; }
+    int get_train_size() const { return train_size; }
+    int get_val_size() const { return val_size; }
+
     int get_batch_size() const { return batch_size; }
     int get_input_nodes() const { return input_nodes; }
     int get_output_nodes() const { return output_nodes; }
 };
 
 
-DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes, int batch_size_) {
+DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes, int batch_size_, float val_fraction, unsigned int seed) {
     filepath = path;
     size = data_size;
     input_nodes = inodes;
     output_nodes = onodes;
     batch_size = batch_size_;
     current_batch = 0;
+    val_mode = false;
 
     isopen = false;
-
-    num_batches = (size + batch_size - 1) / batch_size;
 
     images = (float*)malloc((size_t)input_nodes * size * sizeof(float));
     labels = (float*)malloc((size_t)output_nodes * size * sizeof(float));
@@ -99,17 +116,21 @@ DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes
     image_batch = nullptr;
     target_batch = nullptr;
     current_batch_size = 0;
-    rng.seed(12345);
+    rng.seed(seed);
 
     allocate_batch_buffers();
 
-    if (path.substr(path.find_last_of(".") + 1) == "csv")
-        LoadDataCSV();
-    else
-        LoadData();
+    if (path.substr(path.find_last_of(".") + 1) == "csv") LoadDataCSV();
+    else throw std::runtime_error("DatasetFile: Unsupported file format.");
 
     indices.resize(size);
     for (int i = 0; i < size; i++) indices[i] = i;
+
+    if (val_fraction > 0.0f) {
+        std::shuffle(indices.begin(), indices.end(), rng);
+    }
+
+    build_split(val_fraction);
 
     reset();
 }
@@ -135,55 +156,6 @@ DatasetFile::~DatasetFile()
     if (target_batch) cudaFreeHost(target_batch);
     free(images);
     free(labels);
-}
-
-
-void DatasetFile::LoadData() {
-    std::string line;
-    std::vector<std::string> part;
-    std::ifstream input_file(filepath);
-
-    if (!input_file.is_open()) {
-        std::cerr << "Error: Could not open file " << filepath << std::endl;
-        throw std::runtime_error("Error opening file.");
-    }
-
-    isopen = true;
-
-    std::vector<float> inputs;
-    std::vector<float> targets;
-
-    int index = 0;
-    int image_count = 0;
-    if (input_file.is_open()) {
-        while (std::getline(input_file, line) && image_count < size) {
-            if (index % 2 == 0) {
-                std::vector<double> input;
-                part = split(line, ' ');
-                for (unsigned p = 0; p < part.size(); p++){
-                    inputs.push_back(atof(part[p].c_str()));
-                }
-
-            } else {
-                std::vector<double> target;
-                part = split(line, ' ');
-                for (unsigned p = 0; p < part.size(); p++) {
-                    targets.push_back(atof(part[p].c_str()));
-                }
-                image_count++;
-            }
-            index++;
-        }
-    }
-
-    for (size_t i = 0; i < inputs.size(); i++){
-        images[i] = inputs[i];
-    }
-    for (size_t i = 0; i < targets.size(); i++){
-        labels[i] = targets[i];
-    }
-
-    input_file.close();
 }
 
 
@@ -288,7 +260,35 @@ void DatasetFile::reset() {
 
 
 void DatasetFile::shuffle() {
-    std::shuffle(indices.begin(), indices.end(), rng);
+    int offset = range_offset();
+    int rsize = range_size();
+
+    std::shuffle(indices.begin() + offset, indices.begin() + offset + rsize, rng);
     current_batch = 0;
     get_batch(0);
+}
+
+void DatasetFile::build_split(float val_fraction) {
+    if (val_fraction <= 0.0f) {
+        train_size = size;
+        val_size = 0;
+    } else {
+        val_size = static_cast<int>(size * val_fraction);
+        train_size = size - val_size;
+    }
+
+    train_num_batches = (train_size + batch_size - 1) / batch_size;
+    val_num_batches = val_size > 0 ? (val_size + batch_size - 1) / batch_size : 0;
+}
+
+void DatasetFile::use_train() {
+    val_mode = false;
+    reset();
+}
+
+void DatasetFile::use_val() {
+    if (val_size == 0) throw std::runtime_error("DatasetFile::use_val: dataset was constructed without a validation split (val_fraction=0).");
+    
+    val_mode = true;
+    reset();
 }
