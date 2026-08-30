@@ -356,12 +356,12 @@ void test_conv_backward_batch() {
         batch_size, C, size, size, K, kernel_size, stride, padding, OH, OW
     );
 
-    float lr = conv.learning_rate;
+    float lr = 0.01;
     std::vector<float> kernels_expected(kernel_total), biases_expected(K);
     for (int i = 0; i < kernel_total; ++i) kernels_expected[i] = kernels_before[i] + lr * dKernels_avg_cpu[i];
     for (int i = 0; i < K; ++i) biases_expected[i] = biases_before[i] + lr * dBiases_avg_cpu[i];
 
-    float* prev_errors = conv.backward(input_batch.data(), next_errors_batch.data());
+    float* prev_errors = conv.backward(input_batch.data(), next_errors_batch.data(), false);
 
     bool kernels_match = true;
     for (int i = 0; i < kernel_total; ++i) {

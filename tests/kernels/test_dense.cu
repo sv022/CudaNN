@@ -145,7 +145,7 @@ void test_dense_backward_batch() {
                               dInputs_cpu.data(), wg_avg_cpu.data(), bg_avg_cpu.data(),
                               batch_size, in_size, out_size);
 
-    float lr = dense.learning_rate;
+    float lr = 0.01;
     std::vector<float> weights_expected(in_size*out_size), biases_expected(out_size);
     for (int i = 0; i < in_size*out_size; ++i) weights_expected[i] = weights_before[i] + lr * wg_avg_cpu[i];
     for (int j = 0; j < out_size; ++j) biases_expected[j] = biases_before[j] + lr * bg_avg_cpu[j];
