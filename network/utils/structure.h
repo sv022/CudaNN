@@ -108,7 +108,7 @@ struct NetworkStructure
     OptimizerType opt_type;
     LossType loss_type;
 
-    NetworkStructure(float lr = 0.001f, OptimizerType opt = OptimizerType::Adam, LossType lt = LossType::MSE): learning_rate(lr), opt_type(opt), loss_type(lt) {}
+    NetworkStructure(float lr = 0.001f, OptimizerType opt = OptimizerType::SGD, LossType lt = LossType::MSE): learning_rate(lr), opt_type(opt), loss_type(lt) {}
 
     void add_dropout(unsigned int size, float drop_prob) {
         layers.push_back(new DropoutStructure(size, drop_prob));
@@ -203,9 +203,10 @@ struct NetworkStructure
 };
 
 
-void parse_network_structure(const std::string net_str, float learning_rate, LossType loss, NetworkStructure* net) {
+void parse_network_structure(const std::string net_str, OptimizerType opt, float learning_rate, LossType loss, NetworkStructure* net) {
     auto layers = split(net_str, '-');
 
+    net->opt_type = opt;
     net->learning_rate = learning_rate;
     net->loss_type = loss;
 

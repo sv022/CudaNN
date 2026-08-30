@@ -73,3 +73,17 @@ class Adam : public Optimizer
     void step() override { }
     float get_lr() const { return lr; }
 };
+
+OptimizerType parse_opt_type(std::string opt_str) {
+    if (opt_str == "sgd") return OptimizerType::SGD;
+    if (opt_str == "momentum") return OptimizerType::Momentum;
+    if (opt_str == "adam") return OptimizerType::Adam;
+    throw std::runtime_error("Unknown optimizer type: " + opt_str);
+}
+
+std::string opt_type_to_str(OptimizerType opt) {
+    if (opt == OptimizerType::SGD) return "\"sgd\"";
+    if (opt == OptimizerType::Momentum) return "\"momentum\"";
+    if (opt == OptimizerType::Adam) return "\"adam\"";
+    return "null";
+}

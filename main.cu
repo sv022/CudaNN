@@ -39,12 +39,13 @@ bool isCudaDeviceAvailable() {
 void log_arg_error(std::string arg){
     std::cerr << "Usage for mode TRAIN = 1: " << arg << " "
         << "<mode> <layers_conf_string> "
-        << "<learning_rate> <epochs> <batch_size> <train_data_size> <test_data_size> "
-        << "<train_data_path> <test_data_path> <save_weights> <weights_path> <current_dir>\n";
+        << "<optimizer> <learning_rate> <epochs> <batch_size> "
+        << "<train_data_size> <test_data_size> <train_data_path> <test_data_path> " 
+        << "<save_weights> <weights_path> <current_dir> <report_file_name>\n";
     std::cerr << "Usage for mode TEST = 0: " << arg << " "
         << "<mode> <layers_conf_string> "
         << "<test_data_size> <test_data_path> "
-        << "<weights_path> <current_dir>\n";
+        << "<weights_path> <current_dir> <report_file_name>\n";
 }
 
 
@@ -68,25 +69,33 @@ int main(int argc, char* argv[]) {
     std::cout.setf(std::ios::unitbuf);
 
     NetworkStructure* structure = new NetworkStructure();
+
+    int arg_counter = 3;
     
     if (mode == TRAIN) {
-        float learning_rate = std::stof(argv[3]);
-        LossType loss_function = parse_loss_type(argv[4]);
+        if (argc != 16) {
+            log_arg_error(argv[0]);
+            return 1;
+        }
 
-        parse_network_structure(argv[2], learning_rate, loss_function, structure);
+        OptimizerType optimizer = parse_opt_type(argv[arg_counter++]);
+        float learning_rate = std::stof(argv[arg_counter++]);
+        LossType loss_function = parse_loss_type(argv[arg_counter++]);
 
-        int epochs = std::stoi(argv[5]);
-        int batch_size = std::stoi(argv[6]);
-        int train_data_size = std::stoi(argv[7]);
-        int test_data_size = std::stoi(argv[8]);
+        parse_network_structure(argv[2], optimizer, learning_rate, loss_function, structure);
+
+        int epochs = std::stoi(argv[arg_counter++]);
+        int batch_size = std::stoi(argv[arg_counter++]);
+        int train_data_size = std::stoi(argv[arg_counter++]);
+        int test_data_size = std::stoi(argv[arg_counter++]);
         
-        std::string train_data = argv[9];
-        std::string test_data = argv[10];
-        bool save_weights = std::stoi(argv[11]);
+        std::string train_data = argv[arg_counter++];
+        std::string test_data = argv[arg_counter++];
+        bool save_weights = std::stoi(argv[arg_counter++]);
         
-        std::string weights_path = argv[12];
-        std::string current_directory = argv[13];
-        std::string report_file_name = argv[14];
+        std::string weights_path = argv[arg_counter++];
+        std::string current_directory = argv[arg_counter++];
+        std::string report_file_name = argv[arg_counter++];
 
         train(
             structure,
@@ -103,13 +112,17 @@ int main(int argc, char* argv[]) {
         );
 
     } else {
-        parse_network_structure(argv[2], 0.0f, LossType::MSE, structure);
+        if (argc != 8) {
+            log_arg_error(argv[0]);
+            return 1;
+        }
+        parse_network_structure(argv[2], OptimizerType::SGD, 0.0f, LossType::MSE, structure);
         
-        int test_data_size = std::stoi(argv[3]);
-        std::string test_data = argv[4];
-        std::string weights_path = argv[5];
-        std::string current_directory = argv[6];
-        std::string report_file_name = argv[7];
+        int test_data_size = std::stoi(argv[arg_counter++]);
+        std::string test_data = argv[arg_counter++];
+        std::string weights_path = argv[arg_counter++];
+        std::string current_directory = argv[arg_counter++];
+        std::string report_file_name = argv[arg_counter++];
 
         predict(
             structure,
