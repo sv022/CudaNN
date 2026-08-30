@@ -23,7 +23,7 @@ class MaxPooling : public Layer
     void set_batch_size(int bs) override;
 
     void forward(float *inputs) override;
-    float* backward(float *inputs, float *targets, bool) override;
+    float* backward(float *inputs, float *targets, bool raw_grad = false) override;
 
     ~MaxPooling();
 

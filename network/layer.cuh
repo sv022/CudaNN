@@ -13,9 +13,9 @@ class Layer
     int output_size;
     int batch_size;
 
-    float learning_rate = 0.1;
     bool is_training = true;
 
+    std::shared_ptr<Optimizer> optimizer;
     ActivationType activation_type = ActivationType::Linear;
 
     float *outputs;
@@ -24,8 +24,9 @@ class Layer
     virtual float* backward(float *inputs, float *next_errors, bool raw_gradient = false) = 0;
 
     virtual void set_batch_size(int bs) { batch_size = bs; };
-    virtual void set_learning_rate(float lr) { learning_rate = lr; };
     virtual void set_is_training(bool training) { is_training = training; };
     virtual void save_weights(std::string path) {};
     virtual int load_weights(std::string path, int start) { return 0; };
+
+    virtual ~Layer() {}
 };

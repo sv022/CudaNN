@@ -1,9 +1,9 @@
-#include"layer.cuh"
-
+#include <vector>
+#include "layer.cuh"
 
 class Conv : public Layer
 {
-    private:
+private:
     int input_width, input_height, channels;
     int kernel_size, num_kernels, stride, padding;
     int output_width, output_height;
@@ -14,10 +14,16 @@ class Conv : public Layer
     float *d_inputs, *d_outputs, *d_local_grad, *d_dInputs;
     bool buffers_allocated;
 
+    std::vector<float*> d_kernel_state;
+    std::vector<float*> d_bias_state;
+    bool optimizer_state_allocated;
+
     void allocate_batch_buffers(int bs);
     void free_batch_buffers();
+    void allocate_optimizer_state();
+    void free_optimizer_state();
 
-    public:
+public:
     Conv(int input_height, int input_width, int channels, int kernel_size,
          int n_kernels = 1, int stride = 1, int padding = 0);
     ~Conv();
@@ -25,7 +31,7 @@ class Conv : public Layer
     void set_batch_size(int bs) override;
     void sync_weights_to_device();
 
-    float* backward(float *inputs, float *targets, bool);
+    float* backward(float *inputs, float *targets, bool raw_grad = false) override;
     void forward(float *inputs) override;
 
     void save_weights(std::string path) override;
@@ -35,21 +41,20 @@ class Conv : public Layer
     friend void test_conv_forward_batch();
     friend void test_conv_forward_uneven_batch();
     friend void test_conv_backward_batch();
-    
+
     friend void test_conv_save_load_roundtrip();
     friend void test_multi_layer_save_load_offsets();
 };
 
-
 Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, int padding) {
-    input_width = input_w; 
-    input_height = input_h; 
+    input_width = input_w;
+    input_height = input_h;
     channels = c;
 
     size = input_w * input_h * channels;
-    kernel_size = k; 
-    this->stride = stride; 
-    this->padding = padding; 
+    kernel_size = k;
+    this->stride = stride;
+    this->padding = padding;
     num_kernels = n_kernels;
 
     output_width = ((input_width + 2 * padding - kernel_size) / stride) + 1;
@@ -77,17 +82,48 @@ Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, in
     d_inputs = d_outputs = d_local_grad = d_dInputs = nullptr;
     buffers_allocated = false;
     allocate_batch_buffers(batch_size);
+
+    optimizer_state_allocated = false;
 }
 
 Conv::~Conv() {
-    free(outputs); 
-    free(kernels); 
+    free(outputs);
+    free(kernels);
     free(biases);
-    cudaFree(d_kernels); 
-    cudaFree(d_biases); 
-    cudaFree(d_dKernels); 
+    cudaFree(d_kernels);
+    cudaFree(d_biases);
+    cudaFree(d_dKernels);
     cudaFree(d_dBiases);
     free_batch_buffers();
+    free_optimizer_state();
+}
+
+void Conv::allocate_optimizer_state() {
+    if (optimizer_state_allocated) return;
+    if (!optimizer) return;
+
+    int kernel_total = num_kernels * channels * kernel_size * kernel_size;
+    int n = optimizer->state_buffers_needed();
+
+    d_kernel_state.resize(n);
+    d_bias_state.resize(n);
+    for (int i = 0; i < n; i++) {
+        cudaMalloc(&d_kernel_state[i], (size_t)kernel_total * sizeof(float));
+        cudaMemset(d_kernel_state[i], 0, (size_t)kernel_total * sizeof(float));
+
+        cudaMalloc(&d_bias_state[i], (size_t)num_kernels * sizeof(float));
+        cudaMemset(d_bias_state[i], 0, (size_t)num_kernels * sizeof(float));
+    }
+    optimizer_state_allocated = true;
+}
+
+void Conv::free_optimizer_state() {
+    if (!optimizer_state_allocated) return;
+    for (float* buf : d_kernel_state) cudaFree(buf);
+    for (float* buf : d_bias_state) cudaFree(buf);
+    d_kernel_state.clear();
+    d_bias_state.clear();
+    optimizer_state_allocated = false;
 }
 
 void Conv::set_batch_size(int bs) {
@@ -106,9 +142,9 @@ void Conv::sync_weights_to_device() {
 
 void Conv::free_batch_buffers() {
     if (!buffers_allocated) return;
-    cudaFree(d_inputs); 
-    cudaFree(d_outputs); 
-    cudaFree(d_local_grad); 
+    cudaFree(d_inputs);
+    cudaFree(d_outputs);
+    cudaFree(d_local_grad);
     cudaFree(d_dInputs);
     buffers_allocated = false;
 }
@@ -197,11 +233,15 @@ float* Conv::backward(float* inputs, float* next_errors, bool /*raw_gradient*/) 
 
     cudaDeviceSynchronize();
 
-    int blocks_w = (kernel_total + threads1d - 1) / threads1d;
-    update_kernels_kernel<<<blocks_w, threads1d>>>(d_kernels, d_dKernels, learning_rate, kernel_total, batch_size);
+    if (!optimizer_state_allocated) allocate_optimizer_state();
 
-    int blocks_b = (num_kernels + threads1d - 1) / threads1d;
-    update_biases_kernel<<<blocks_b, threads1d>>>(d_biases, d_dBiases, learning_rate, num_kernels, batch_size);
+    optimizer->update(d_kernels, d_dKernels,
+                       d_kernel_state.empty() ? nullptr : d_kernel_state.data(),
+                       kernel_total, batch_size);
+
+    optimizer->update(d_biases, d_dBiases,
+                       d_bias_state.empty() ? nullptr : d_bias_state.data(),
+                       num_kernels, batch_size);
 
     cudaDeviceSynchronize();
 
@@ -220,13 +260,13 @@ void Conv::save_weights(std::string path) {
 
     int kernel_total = num_kernels * channels * kernel_size * kernel_size;
 
-    file.write(reinterpret_cast<const char*>(kernels), sizeof(float) * kernel_total);
-    file.write(reinterpret_cast<const char*>(biases), sizeof(float) * num_kernels);
+    file.write(reinterpret_cast<char*>(kernels), sizeof(float) * kernel_total);
+    file.write(reinterpret_cast<char*>(biases), sizeof(float) * num_kernels);
 
     file.close();
 }
 
-int Conv::load_weights(std::string path, int start) { // return loaded weights size in bytes
+int Conv::load_weights(std::string path, int start) {
     std::ifstream file(path, std::ios::binary);
 
     file.seekg(start, std::ios::beg);
@@ -235,12 +275,10 @@ int Conv::load_weights(std::string path, int start) { // return loaded weights s
 
     free(kernels);
     kernels = (float*)malloc(sizeof(float) * kernel_total);
-
     file.read(reinterpret_cast<char*>(kernels), sizeof(float) * kernel_total);
 
     free(biases);
     biases = (float*)malloc(sizeof(float) * num_kernels);
-
     file.read(reinterpret_cast<char*>(biases), sizeof(float) * num_kernels);
 
     file.close();

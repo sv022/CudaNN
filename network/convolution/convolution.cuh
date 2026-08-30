@@ -151,19 +151,3 @@ void dinput_kernel(const float* __restrict__ kernels, const float* __restrict__ 
         }
     }
 }
-
-__global__
-void update_kernels_kernel(float* kernels, const float* dKernels, float lr, int kernel_total, int batch_size)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= kernel_total) return;
-    kernels[idx] += lr * (dKernels[idx] / (float)batch_size);
-}
-
-__global__
-void update_biases_kernel(float* biases, const float* dBiases, float lr, int N, int batch_size)
-{
-    int n = blockIdx.x * blockDim.x + threadIdx.x;
-    if (n >= N) return;
-    biases[n] += lr * (dBiases[n] / (float)batch_size);
-}

@@ -2,6 +2,7 @@
 #include<vector>
 #include<string>
 #include"../loss/loss.cuh"
+#include"../optimizer/optimizer.cuh"
 
 
 enum class LayerType
@@ -104,9 +105,10 @@ struct NetworkStructure
 {
     std::vector<LayerStructure*> layers;
     float learning_rate;
+    OptimizerType opt_type;
     LossType loss_type;
 
-    NetworkStructure(float lr = 0.001f, LossType lt = LossType::MSE): learning_rate(lr), loss_type(lt) {}
+    NetworkStructure(float lr = 0.001f, OptimizerType opt = OptimizerType::Adam, LossType lt = LossType::MSE): learning_rate(lr), opt_type(opt), loss_type(lt) {}
 
     void add_dropout(unsigned int size, float drop_prob) {
         layers.push_back(new DropoutStructure(size, drop_prob));

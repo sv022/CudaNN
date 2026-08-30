@@ -1,24 +1,28 @@
-#include <utility>
-#include"layer.cuh"
-
+#include <vector>
+#include "layer.cuh"
 
 class Dense : public Layer
 {
-    private:
+private:
     float *weights, *biases;
 
     float *d_weights, *d_biases;
-    float *d_weights_updated, *d_biases_updated;
     float *d_weight_grad_sum, *d_bias_grad_sum;
     float *d_weights_T;
 
+    std::vector<float*> d_weight_state;
+    std::vector<float*> d_bias_state;
+
     float *d_inputs, *d_outputs, *d_inputs_T, *d_local_grad, *d_prev_errors;
     bool buffers_allocated;
+    bool optimizer_state_allocated;
 
     void allocate_batch_buffers(int bs);
     void free_batch_buffers();
+    void allocate_optimizer_state();
+    void free_optimizer_state();
 
-    public:
+public:
     Dense(int layer_size, int next_size);
     ~Dense();
 
@@ -38,14 +42,11 @@ class Dense : public Layer
     friend void test_dense_save_load_roundtrip();
     friend void test_multi_layer_save_load_offsets();
 
-    friend void test_sigmoid_forward_backward();
-    friend void test_relu_forward_backward();
-    friend void test_linear_forward_backward();
-    friend void test_softmax_forward_sums_to_one();
     friend void run_softmax_backward_without_raw_gradient_should_abort();
-    friend void test_softmax_backward_with_raw_gradient();
-};
 
+    friend void test_momentum_two_steps_matches_reference();
+    friend void test_adam_first_step_finite_and_moves_weights();
+};
 
 Dense::Dense(int layer_size, int next_size){
     size = layer_size;
@@ -63,8 +64,6 @@ Dense::Dense(int layer_size, int next_size){
     int in_size = size, out_size = output_size;
     cudaMalloc(&d_weights, in_size * out_size * sizeof(float));
     cudaMalloc(&d_biases, out_size * sizeof(float));
-    cudaMalloc(&d_weights_updated, in_size * out_size * sizeof(float));
-    cudaMalloc(&d_biases_updated, out_size * sizeof(float));
     cudaMalloc(&d_weight_grad_sum, in_size * out_size * sizeof(float));
     cudaMalloc(&d_bias_grad_sum, out_size * sizeof(float));
     cudaMalloc(&d_weights_T, out_size * in_size * sizeof(float));
@@ -74,15 +73,45 @@ Dense::Dense(int layer_size, int next_size){
     d_inputs = d_outputs = d_inputs_T = d_local_grad = d_prev_errors = nullptr;
     buffers_allocated = false;
     allocate_batch_buffers(batch_size);
+
+    optimizer_state_allocated = false;
 }
 
 Dense::~Dense() {
     free(outputs); free(weights); free(biases);
     cudaFree(d_weights); cudaFree(d_biases);
-    cudaFree(d_weights_updated); cudaFree(d_biases_updated);
     cudaFree(d_weight_grad_sum); cudaFree(d_bias_grad_sum);
     cudaFree(d_weights_T);
     free_batch_buffers();
+    free_optimizer_state();
+}
+
+void Dense::allocate_optimizer_state() {
+    if (optimizer_state_allocated) return;
+    if (!optimizer) return;
+
+    int in_size = size, out_size = output_size;
+    int n = optimizer->state_buffers_needed();
+
+    d_weight_state.resize(n);
+    d_bias_state.resize(n);
+    for (int i = 0; i < n; i++) {
+        cudaMalloc(&d_weight_state[i], (size_t)in_size * out_size * sizeof(float));
+        cudaMemset(d_weight_state[i], 0, (size_t)in_size * out_size * sizeof(float));
+
+        cudaMalloc(&d_bias_state[i], (size_t)out_size * sizeof(float));
+        cudaMemset(d_bias_state[i], 0, (size_t)out_size * sizeof(float));
+    }
+    optimizer_state_allocated = true;
+}
+
+void Dense::free_optimizer_state() {
+    if (!optimizer_state_allocated) return;
+    for (float* buf : d_weight_state) cudaFree(buf);
+    for (float* buf : d_bias_state) cudaFree(buf);
+    d_weight_state.clear();
+    d_bias_state.clear();
+    optimizer_state_allocated = false;
 }
 
 void Dense::set_batch_size(int bs) {
@@ -173,8 +202,6 @@ float* Dense::backward(float *inputs, float *next_errors, bool) {
     Kernel::sum_rows<<<bias_blocks, bias_threads>>>(d_local_grad, d_bias_grad_sum, batch_size, out_size);
     cudaDeviceSynchronize();
 
-    float effective_lr = learning_rate / (float)batch_size;
-
     dim3 W_TRANS_BLOCKS(
         (out_size + THREADS.x - 1) / THREADS.x,
         (in_size + THREADS.y - 1) / THREADS.y
@@ -189,19 +216,17 @@ float* Dense::backward(float *inputs, float *next_errors, bool) {
     Kernel::dot<<<DIN_BLOCKS, THREADS>>>(d_local_grad, d_weights_T, d_prev_errors, batch_size, out_size, in_size);
     cudaDeviceSynchronize();
 
-    dim3 W_UPD_BLOCKS(
-        (out_size + THREADS.x - 1) / THREADS.x,
-        (in_size + THREADS.y - 1) / THREADS.y
-    );
-    Kernel::multadd<<<W_UPD_BLOCKS, THREADS>>>(d_weights, d_weight_grad_sum, d_weights_updated, in_size, out_size, effective_lr);
+    if (!optimizer_state_allocated) allocate_optimizer_state();
 
-    dim3 B_UPD_BLOCKS((out_size + THREADS.x - 1) / THREADS.x, 1);
-    Kernel::multadd<<<B_UPD_BLOCKS, THREADS>>>(d_biases, d_bias_grad_sum, d_biases_updated, 1, out_size, effective_lr);
+    optimizer->update(d_weights, d_weight_grad_sum,
+                       d_weight_state.empty() ? nullptr : d_weight_state.data(),
+                       in_size * out_size, batch_size);
+
+    optimizer->update(d_biases, d_bias_grad_sum,
+                       d_bias_state.empty() ? nullptr : d_bias_state.data(),
+                       out_size, batch_size);
 
     cudaDeviceSynchronize();
-
-    std::swap(d_weights, d_weights_updated);
-    std::swap(d_biases, d_biases_updated);
 
     cudaMemcpy(weights, d_weights, in_size * out_size * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(biases, d_biases, out_size * sizeof(float), cudaMemcpyDeviceToHost);
@@ -213,29 +238,26 @@ float* Dense::backward(float *inputs, float *next_errors, bool) {
     return prev_errors;
 }
 
-
 void Dense::save_weights(std::string path) {
     std::ofstream file(path, std::ios::binary | std::ios::app);
 
-    file.write(reinterpret_cast<const char*>(weights), sizeof(float) * size * output_size);
-    file.write(reinterpret_cast<const char*>(biases), sizeof(float) * output_size);
+    file.write(reinterpret_cast<char*>(weights), sizeof(float) * size * output_size);
+    file.write(reinterpret_cast<char*>(biases), sizeof(float) * output_size);
 
     file.close();
 }
 
-int Dense::load_weights(std::string path, int start) { // return loaded weights size in bytes
+int Dense::load_weights(std::string path, int start) {
     std::ifstream file(path, std::ios::binary);
 
     file.seekg(start, std::ios::beg);
 
     free(weights);
     weights = (float*)malloc(sizeof(float) * size * output_size);
-
     file.read(reinterpret_cast<char*>(weights), sizeof(float) * size * output_size);
 
     free(biases);
     biases = (float*)malloc(sizeof(float) * output_size);
-
     file.read(reinterpret_cast<char*>(biases), sizeof(float) * output_size);
 
     file.close();
