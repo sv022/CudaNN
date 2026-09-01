@@ -154,7 +154,11 @@ struct NetworkStructure
     }
 
     std::string structure_to_json() {
-        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"loss_function\":" + loss_type_to_str(loss_type) + ",\n  \t\t\"layers\": [\n";
+        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate);
+        json += (",\n  \t\t\"optimizer\":" + opt_type_to_str(opt_type));
+        json += (",\n  \t\t\"loss_function\":" + loss_type_to_str(loss_type));
+        json += ",\n  \t\t\"layers\": [\n";
+
         std::string trailing_comma;
         for (size_t i = 0; i < layers.size(); ++i) {
             if (i < layers.size() - 1) trailing_comma = ",";
@@ -190,7 +194,7 @@ struct NetworkStructure
             } else if (layers[i]->layer_type == LayerType::Dropout) {
                 auto* dropout_layer = static_cast<DropoutStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"dropout\",\n";
-                json += "\t\t\t\"p\": " + std::to_string(dropout_layer->drop_prob) + "\n\t\t}" + trailing_comma + "\n";
+                json += "\t\t\t\"drop_prob\": " + std::to_string(dropout_layer->drop_prob) + "\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";
