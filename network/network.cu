@@ -46,7 +46,7 @@ private:
     void forward(float *inputs, int current_batch_size);
     void backward(float *inputs, float *targets, int current_batch_size);
     int predict(float *input);
-    void train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction = 0.1f);
+    void train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction = 0.0f);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
     void log_structure();

@@ -8,6 +8,7 @@ void train(
     int epochs,
     int batch_size,
     int train_data_size,
+    float val_fraction,
     int test_data_size,
     std::string train_data,
     std::string test_data,
@@ -24,7 +25,7 @@ void train(
         model.load_weights(weights_path);
     }
 
-    model.train(train_data, train_data_size, epochs, batch_size, loss_history);
+    model.train(train_data, train_data_size, epochs, batch_size, loss_history, val_fraction);
     
     int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
@@ -49,6 +50,7 @@ void train(
         epochs,
         batch_size,
         train_data_size,
+        val_fraction,
         test_data_size,
         accuracy,
         loss_history,

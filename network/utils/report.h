@@ -10,6 +10,7 @@ void save_report(
     int epochs,
     int batch_size,
     int train_data_size,
+    float val_fraction,
     int test_data_size,
     float test_accuracy,
     float* loss_history,
@@ -54,6 +55,7 @@ void save_report(
         "    \"epochs\": " + std::to_string(epochs) + ",\n"
         "    \"batchSize\": " + std::to_string(batch_size) + ",\n"
         "    \"trainDataSize\": " + std::to_string(train_data_size) + ",\n"
+        "    \"valFraction\": " + std::to_string(val_fraction) + ",\n"
         "    \"testDataSize\": " + std::to_string(test_data_size) + ",\n"
         "    \"testAccuracy\": " + std::to_string(test_accuracy) + ",\n"
         "    \"lossHistory\": " + json_loss_history + ",\n"

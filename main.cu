@@ -86,7 +86,11 @@ int main(int argc, char* argv[]) {
 
         int epochs = std::stoi(argv[arg_counter++]);
         int batch_size = std::stoi(argv[arg_counter++]);
-        int train_data_size = std::stoi(argv[arg_counter++]);
+
+        std::pair<int, float> data_split = parse_val_fraction(argv[arg_counter++]);
+        int train_data_size = data_split.first;
+        float val_fraction  = data_split.second;
+
         int test_data_size = std::stoi(argv[arg_counter++]);
         
         std::string train_data = argv[arg_counter++];
@@ -102,6 +106,7 @@ int main(int argc, char* argv[]) {
             epochs,
             batch_size,
             train_data_size,
+            val_fraction,
             test_data_size,
             train_data,
             test_data,

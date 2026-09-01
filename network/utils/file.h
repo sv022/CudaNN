@@ -32,6 +32,30 @@ std::vector<std::string> split(std::string str, char c) {
     return array;
 }
 
+std::pair<int, float> parse_val_fraction(const std::string str) {
+    std::vector<std::string> parts = split(str, '/');
+
+    if (parts.empty()) {
+        return {0, 0.0f};
+    }
+
+    int val_base = std::stoi(parts[0]);
+    float val_fraction = 0.0;
+    
+    if (parts.size() > 1) {
+        val_fraction = std::stof(parts[1]);
+    }
+    
+    if (val_fraction >= 1.0) {
+        throw std::out_of_range("DatasetFile: val_fraction can not be greater than 1");
+    }
+    if (val_fraction < 0.0) {
+        throw std::out_of_range("DatasetFile: val_fraction can not be smaller than 0");
+    }
+    
+    return {val_base, val_fraction};
+}
+
 class DatasetFile
 {
 private:
