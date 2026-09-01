@@ -31,22 +31,24 @@ conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-a
 
 Args list for training:
 ```sh
-<mode (TRAIN=1)> <layer_config_string> <learning_rate> <loss_function> <batch_size> <epochs> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir>
+<mode (TRAIN=1)> <layer_config_string> <optimizer> <learning_rate> <loss_function> <epochs> <batch_size> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir> <report_file_name>
 ```
-
-`<current_dir>` is where results will be saved in `./runs` subdirectory.
 
 Args list for testing:
 ```sh
-<mode (TEST=0)> <layer_config_string> <test_data_size> <test_data_path> <weights_path> <current_dir>
+<mode (TEST=0)> <layer_config_string> <test_data_size> <test_data_path> <weights_path> <current_dir> <report_file_name>
 ```
+
+`<current_dir>` is where results will be saved in `./runs` subdirectory.
 
 `<weights_path>` is the path to `.bin` file that contains weights that will be loaded and used in the model.
 
 `<current_dir>` is where results will be saved in `./predict` subdirectory.
 
+`<report_file_name>` will be used to generate the report file after the run is completed. Using '-' will automatically generate report name using datetime. 
+
 Example:
 
 ```sh
-.\network.exe 1 "conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dense_256_10-activation_softmax" 0.001 cce 128 5 60000 10000 C:/Users/YOURUSERNAME/mnist_digits_train_60000.csv C:/Users/YOURUSERNAME/mnist_digits_test_10000.csv 1 - C:/Users/YOURUSERNAME/network
+.\network.exe 1 "conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dropout_0.5-dense_256_10-activation_softmax" sgd 0.05 cce 5 128 60000 10000 D:/path/to/digits-mnist_train.csv D:/path/to/digits-mnist_test.csv 1 - D:/results/are/saved/here -
 ```
