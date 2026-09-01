@@ -2,6 +2,7 @@
 #include<vector>
 #include<string>
 #include"../loss/loss.cuh"
+#include"../optimizer/optimizer.cuh"
 
 
 enum class LayerType
@@ -104,9 +105,10 @@ struct NetworkStructure
 {
     std::vector<LayerStructure*> layers;
     float learning_rate;
+    OptimizerType opt_type;
     LossType loss_type;
 
-    NetworkStructure(float lr = 0.001f, LossType lt = LossType::MSE): learning_rate(lr), loss_type(lt) {}
+    NetworkStructure(float lr = 0.001f, OptimizerType opt = OptimizerType::SGD, LossType lt = LossType::MSE): learning_rate(lr), opt_type(opt), loss_type(lt) {}
 
     void add_dropout(unsigned int size, float drop_prob) {
         layers.push_back(new DropoutStructure(size, drop_prob));
@@ -152,7 +154,11 @@ struct NetworkStructure
     }
 
     std::string structure_to_json() {
-        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate) + ",\n  \t\t\"loss_function\":" + loss_type_to_str(loss_type) + ",\n  \t\t\"layers\": [\n";
+        std::string json = "{\n  \t\t\"learning_rate\": " + std::to_string(learning_rate);
+        json += (",\n  \t\t\"optimizer\":" + opt_type_to_str(opt_type));
+        json += (",\n  \t\t\"loss_function\":" + loss_type_to_str(loss_type));
+        json += ",\n  \t\t\"layers\": [\n";
+
         std::string trailing_comma;
         for (size_t i = 0; i < layers.size(); ++i) {
             if (i < layers.size() - 1) trailing_comma = ",";
@@ -188,7 +194,7 @@ struct NetworkStructure
             } else if (layers[i]->layer_type == LayerType::Dropout) {
                 auto* dropout_layer = static_cast<DropoutStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"dropout\",\n";
-                json += "\t\t\t\"p\": " + std::to_string(dropout_layer->drop_prob) + "\n\t\t}" + trailing_comma + "\n";
+                json += "\t\t\t\"drop_prob\": " + std::to_string(dropout_layer->drop_prob) + "\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";
@@ -201,9 +207,10 @@ struct NetworkStructure
 };
 
 
-void parse_network_structure(const std::string net_str, float learning_rate, LossType loss, NetworkStructure* net) {
+void parse_network_structure(const std::string net_str, OptimizerType opt, float learning_rate, LossType loss, NetworkStructure* net) {
     auto layers = split(net_str, '-');
 
+    net->opt_type = opt;
     net->learning_rate = learning_rate;
     net->loss_type = loss;
 

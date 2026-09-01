@@ -13,6 +13,7 @@
 #include"utils/structure.h"
 #include"utils/logging.h"
 
+#include"optimizer/optimizer.cuh"
 #include"loss/loss.cuh"
 #include"dense.cu"
 #include"conv.cu"
@@ -24,8 +25,8 @@
 class NeuralNetwork 
 {
 private:
-    float learning_rate;
     std::vector<Layer*> layers;
+    std::shared_ptr<Optimizer> optimizer;
     LossType loss_function;
 
     int input_nodes;
@@ -35,7 +36,7 @@ private:
     int getMaxActivationIndex(float *target);
 
     public:
-    NeuralNetwork(float lr, LossType loss = LossType::MSE);
+    NeuralNetwork(float lr, LossType loss = LossType::MSE, OptimizerType opt = OptimizerType::SGD);
     NeuralNetwork(const NetworkStructure* structure);
     void add_layer(Layer* Layer);
     void set_learning_rate(float lr);
@@ -60,15 +61,34 @@ private:
     friend void test_repeated_train_after_test_reenables_training_mode();
 };
 
-NeuralNetwork::NeuralNetwork(float lr, LossType loss) {
-    learning_rate = lr;
+NeuralNetwork::NeuralNetwork(float lr, LossType loss, OptimizerType opt) {
+    switch (opt) {
+        case OptimizerType::Momentum:
+            optimizer = std::make_shared<Momentum>(lr, 0.9f);
+            break;
+        case OptimizerType::Adam:
+            optimizer = std::make_shared<Adam>(lr, 0.9f, 0.999f, 1e-8f);
+            break;
+        default:
+            optimizer = std::make_shared<SGD>(lr);
+    }
     loss_function = loss;
     input_nodes = 0;
     output_nodes = 0;
 }
 
 NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
-    learning_rate = structure->learning_rate;
+
+    switch (structure->opt_type) {
+        case OptimizerType::Momentum:
+            optimizer = std::make_shared<Momentum>(structure->learning_rate, 0.9f);
+            break;
+        case OptimizerType::Adam:
+            optimizer = std::make_shared<Adam>(structure->learning_rate, 0.9f, 0.999f, 1e-8f);
+            break;
+        default:
+            optimizer = std::make_shared<SGD>(structure->learning_rate);
+    }
     loss_function = structure->loss_type;
 
     for (LayerStructure* layer : structure->layers) {
@@ -121,21 +141,19 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
             std::exit(1);
         }
     }
-
-    set_learning_rate(learning_rate);
 }
 
 
 void NeuralNetwork::log_structure() {
     std::cout << "Layer count: " << layers.size() << std::endl;
     for (size_t i = 0; i < layers.size(); ++i) {
-        std::cout << "Layer " << i + 1 << ": Size = " << layers[i]->size << ", Output Size = " << layers[i]->output_size << ", Learning Rate = " << layers[i]->learning_rate << std::endl;
+        std::cout << "Layer " << i + 1 << ": Size = " << layers[i]->size << ", Output Size = " << layers[i]->output_size << std::endl;
     }
-    std::cout << "Learning Rate: " << learning_rate << std::endl;
+    std::cout << "Learning Rate: " << optimizer->get_lr() << std::endl;
 }
 
 void NeuralNetwork::add_layer(Layer* layer){
-    layer->set_learning_rate(learning_rate);
+    layer->optimizer = optimizer;
     if (layers.size() == 0) {
         layers.push_back(layer);
         input_nodes = layer->size;
@@ -152,7 +170,7 @@ void NeuralNetwork::add_layer(Layer* layer){
 }
 
 void NeuralNetwork::set_learning_rate(float lr){
-    for (auto &layer : layers) layer->set_learning_rate(lr);
+    optimizer->set_lr(lr);
 }
 
 void NeuralNetwork::set_is_training(bool training) {
@@ -228,6 +246,8 @@ void NeuralNetwork::backward(float *inputs, float *targets, int current_batch_si
         }
         current_errors = prev_errors;
     }
+
+    optimizer->step();
 
     free(current_errors);
     free(output_errors);
