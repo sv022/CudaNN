@@ -148,7 +148,13 @@ struct NetworkStructure
             } else if (layer->layer_type == LayerType::Dense) {
                 auto* dense_layer = static_cast<DenseStructure*>(layer);
                 structure_str += "dense_" + std::to_string(dense_layer->input_nodes) + "_" + std::to_string(dense_layer->output_nodes) + "-";
-            }
+            } else if (layer->layer_type == LayerType::Activation) {
+                auto* activation_layer = static_cast<ActivationStructure*>(layer);
+                structure_str += "activation_" + activation_type_to_str(activation_layer->activation_type) + "-";
+            } else if (layer->layer_type == LayerType::Dropout) {
+                auto* dropout_layer = static_cast<DropoutStructure*>(layer);
+                structure_str += "dropout_" + std::to_string(dropout_layer->drop_prob) + "-";
+            } 
         }
         return structure_str.empty() ? structure_str : structure_str.substr(0, structure_str.size() - 1); // Remove trailing '-'
     }
