@@ -3,6 +3,10 @@
 #include<ctime>
 #include<sys/stat.h>
 
+static void ensure_device(float **p, size_t *cap, size_t n) {
+    if (n > *cap) { cudaFree(*p); cudaMalloc(p, n * sizeof(float)); *cap = n; }
+}
+
 std::string get_current_datetime_simple() {
     time_t now = time(nullptr);
     char buf[80];

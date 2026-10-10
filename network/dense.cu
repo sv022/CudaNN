@@ -13,7 +13,7 @@ private:
     std::vector<float*> d_weight_state;
     std::vector<float*> d_bias_state;
 
-    float *d_inputs, *d_outputs, *d_inputs_T, *d_local_grad, *d_prev_errors;
+    float *d_inputs_T;
     bool buffers_allocated;
     bool optimizer_state_allocated;
 
@@ -35,18 +35,6 @@ public:
 
     void save_weights(std::string path) override;
     int load_weights(std::string path, int start) override;
-
-    friend void test_dense_forward_batch_size_1_equivalence();
-    friend void test_dense_forward_batch();
-    friend void test_dense_backward_batch();
-
-    friend void test_dense_save_load_roundtrip();
-    friend void test_multi_layer_save_load_offsets();
-
-    friend void run_softmax_backward_without_raw_gradient_should_abort();
-
-    friend void test_momentum_two_steps_matches_reference();
-    friend void test_adam_first_step_finite_and_moves_weights();
 };
 
 Dense::Dense(int layer_size, int next_size){
@@ -71,7 +59,7 @@ Dense::Dense(int layer_size, int next_size){
 
     sync_weights_to_device();
 
-    d_inputs = d_outputs = d_inputs_T = d_local_grad = d_prev_errors = nullptr;
+    d_inputs_T = nullptr;
     buffers_allocated = false;
     allocate_batch_buffers(batch_size);
 
@@ -117,12 +105,22 @@ void Dense::free_optimizer_state() {
 
 void Dense::set_batch_size(int bs) {
     if (bs == batch_size && buffers_allocated) return;
-    if (bs != batch_size) {
-        free(outputs);
-        outputs = (float*)malloc(sizeof(float) * (size_t)bs * output_size);
-    }
     batch_size = bs;
     allocate_batch_buffers(bs);
+}
+
+void Dense::free_batch_buffers() {
+    if (!buffers_allocated) return;
+    cudaFree(d_inputs_T); d_inputs_T = nullptr;
+    free_io();
+    buffers_allocated = false;
+}
+
+void Dense::allocate_batch_buffers(int bs) {
+    free_batch_buffers();
+    cudaMalloc(&d_inputs_T, (size_t)bs * size * sizeof(float));
+    alloc_io(bs);
+    buffers_allocated = true;
 }
 
 void Dense::sync_weights_to_device() {
@@ -136,109 +134,39 @@ void Dense::sync_weights_to_host() {
     cudaMemcpy(biases, d_biases, (size_t)output_size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-void Dense::free_batch_buffers() {
-    if (!buffers_allocated) return;
-    cudaFree(d_inputs); cudaFree(d_outputs);
-    cudaFree(d_inputs_T); cudaFree(d_local_grad); cudaFree(d_prev_errors);
-    buffers_allocated = false;
-}
-
-void Dense::allocate_batch_buffers(int bs) {
-    free_batch_buffers();
-    int in_size = size, out_size = output_size;
-    size_t total_input = (size_t)bs * in_size;
-    size_t total_output = (size_t)bs * out_size;
-
-    cudaMalloc(&d_inputs, total_input * sizeof(float));
-    cudaMalloc(&d_outputs, total_output * sizeof(float));
-    cudaMalloc(&d_inputs_T, total_input * sizeof(float));
-    cudaMalloc(&d_local_grad, total_output * sizeof(float));
-    cudaMalloc(&d_prev_errors, total_input * sizeof(float));
-    buffers_allocated = true;
-}
-
-void Dense::forward(float *inputs) {
-    int in_size = size, out_size = output_size;
-    size_t total_input_size = (size_t)batch_size * in_size;
-    size_t total_output_size = (size_t)batch_size * out_size;
-
-    cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
-
+void Dense::forward(float *d_in) {
     dim3 THREADS(32, 32);
-    dim3 weightsBlocksPerGrid(
-        (out_size + THREADS.x - 1) / THREADS.x,
-        (batch_size + THREADS.y - 1) / THREADS.y
-    );
-
-    Kernel::dot_bias<<<weightsBlocksPerGrid, THREADS>>>(d_inputs, d_weights, d_biases, d_outputs, batch_size, in_size, out_size);
-
-    cudaDeviceSynchronize();
-    cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
+    dim3 weightsBlocksPerGrid((output_size + THREADS.x - 1) / THREADS.x,
+                              (batch_size  + THREADS.y - 1) / THREADS.y);
+    Kernel::dot_bias<<<weightsBlocksPerGrid, THREADS>>>(d_in, d_weights, d_biases, d_outputs, batch_size, size, output_size);
 }
 
-float* Dense::backward(float *inputs, float *next_errors, bool) {
+float* Dense::backward(float *d_in, float *d_err, bool) {
     int in_size = size, out_size = output_size;
-    size_t total_out = (size_t)batch_size * out_size;
-    size_t total_in = (size_t)batch_size * in_size;
-
-    float *local_grad = (float*)malloc(sizeof(float) * total_out);
-    memcpy(local_grad, next_errors, sizeof(float) * total_out);
-
-    cudaMemcpy(d_inputs, inputs, total_in * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_local_grad, local_grad, total_out * sizeof(float), cudaMemcpyHostToDevice);
-
     dim3 THREADS(32, 32);
 
-    dim3 IN_TRANS_BLOCKS(
-        (in_size + THREADS.x - 1) / THREADS.x,
-        (batch_size + THREADS.y - 1) / THREADS.y
-    );
-    Kernel::transpose<<<IN_TRANS_BLOCKS, THREADS>>>(d_inputs, d_inputs_T, batch_size, in_size);
-    cudaDeviceSynchronize();
+    dim3 IN_TRANS_BLOCKS((in_size + THREADS.x - 1) / THREADS.x, (batch_size + THREADS.y - 1) / THREADS.y);
+    Kernel::transpose<<<IN_TRANS_BLOCKS, THREADS>>>(d_in, d_inputs_T, batch_size, in_size);
 
-    dim3 WG_BLOCKS(
-        (out_size + THREADS.x - 1) / THREADS.x,
-        (in_size + THREADS.y - 1) / THREADS.y
-    );
-    Kernel::dot<<<WG_BLOCKS, THREADS>>>(d_inputs_T, d_local_grad, d_weight_grad_sum, in_size, batch_size, out_size);
-    cudaDeviceSynchronize();
+    dim3 WG_BLOCKS((out_size + THREADS.x - 1) / THREADS.x, (in_size + THREADS.y - 1) / THREADS.y);
+    Kernel::dot<<<WG_BLOCKS, THREADS>>>(d_inputs_T, d_err, d_weight_grad_sum, in_size, batch_size, out_size);
 
-    int bias_threads = 256;
-    int bias_blocks = (out_size + bias_threads - 1) / bias_threads;
-    Kernel::sum_rows<<<bias_blocks, bias_threads>>>(d_local_grad, d_bias_grad_sum, batch_size, out_size);
-    cudaDeviceSynchronize();
+    int bias_threads = 256, bias_blocks = (out_size + bias_threads - 1) / bias_threads;
+    Kernel::sum_rows<<<bias_blocks, bias_threads>>>(d_err, d_bias_grad_sum, batch_size, out_size);
 
-    dim3 W_TRANS_BLOCKS(
-        (out_size + THREADS.x - 1) / THREADS.x,
-        (in_size + THREADS.y - 1) / THREADS.y
-    );
-    Kernel::transpose<<<W_TRANS_BLOCKS, THREADS>>>(d_weights, d_weights_T, in_size, out_size);
-    cudaDeviceSynchronize();
-
-    dim3 DIN_BLOCKS(
-        (in_size + THREADS.x - 1) / THREADS.x,
-        (batch_size + THREADS.y - 1) / THREADS.y
-    );
-    Kernel::dot<<<DIN_BLOCKS, THREADS>>>(d_local_grad, d_weights_T, d_prev_errors, batch_size, out_size, in_size);
-    cudaDeviceSynchronize();
+    if (compute_input_grad) {
+        dim3 W_TRANS_BLOCKS((out_size + THREADS.x - 1) / THREADS.x, (in_size + THREADS.y - 1) / THREADS.y);
+        Kernel::transpose<<<W_TRANS_BLOCKS, THREADS>>>(d_weights, d_weights_T, in_size, out_size);
+        dim3 DIN_BLOCKS((in_size + THREADS.x - 1) / THREADS.x, (batch_size + THREADS.y - 1) / THREADS.y);
+        Kernel::dot<<<DIN_BLOCKS, THREADS>>>(d_err, d_weights_T, d_prev_errors, batch_size, out_size, in_size);
+    }
 
     if (!optimizer_state_allocated) allocate_optimizer_state();
-
     optimizer->update(d_weights, d_weight_grad_sum,
-                       d_weight_state.empty() ? nullptr : d_weight_state.data(),
-                       in_size * out_size, batch_size);
-
+                      d_weight_state.empty() ? nullptr : d_weight_state.data(), in_size * out_size, batch_size);
     optimizer->update(d_biases, d_bias_grad_sum,
-                       d_bias_state.empty() ? nullptr : d_bias_state.data(),
-                       out_size, batch_size);
-
-    cudaDeviceSynchronize();
-    
-    float *prev_errors = (float*)malloc(sizeof(float) * total_in);
-    cudaMemcpy(prev_errors, d_prev_errors, total_in * sizeof(float), cudaMemcpyDeviceToHost);
-
-    free(local_grad);
-    return prev_errors;
+                      d_bias_state.empty() ? nullptr : d_bias_state.data(), out_size, batch_size);
+    return compute_input_grad ? d_prev_errors : nullptr;
 }
 
 void Dense::save_weights(std::string path) {

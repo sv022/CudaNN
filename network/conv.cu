@@ -11,7 +11,7 @@ private:
     float *kernels, *biases;
 
     float *d_kernels, *d_biases, *d_dKernels, *d_dBiases;
-    float *d_inputs, *d_outputs, *d_local_grad, *d_dInputs;
+    float *d_inputs, *d_local_grad, *d_dInputs;
     bool buffers_allocated;
 
     std::vector<float*> d_kernel_state;
@@ -37,14 +37,6 @@ public:
 
     void save_weights(std::string path) override;
     int load_weights(std::string path, int start) override;
-
-    friend void test_conv_forward_batch_size_1_equivalence();
-    friend void test_conv_forward_batch();
-    friend void test_conv_forward_uneven_batch();
-    friend void test_conv_backward_batch();
-
-    friend void test_conv_save_load_roundtrip();
-    friend void test_multi_layer_save_load_offsets();
 };
 
 Conv::Conv(int input_h, int input_w, int c, int k, int n_kernels, int stride, int padding) {
@@ -128,11 +120,21 @@ void Conv::free_optimizer_state() {
 }
 
 void Conv::set_batch_size(int bs) {
-    if (bs == batch_size) return;
+    if (bs == batch_size && buffers_allocated) return;
     batch_size = bs;
-    free(outputs);
-    outputs = (float*)malloc(sizeof(float) * (size_t)batch_size * output_size);
-    allocate_batch_buffers(batch_size);
+    allocate_batch_buffers(bs);
+}
+
+void Conv::free_batch_buffers() {
+    if (!buffers_allocated) return;
+    free_io();
+    buffers_allocated = false;
+}
+
+void Conv::allocate_batch_buffers(int bs) {
+    free_batch_buffers();
+    alloc_io(bs);
+    buffers_allocated = true;
 }
 
 void Conv::sync_weights_to_device() {
@@ -147,116 +149,43 @@ void Conv::sync_weights_to_host() {
     cudaMemcpy(biases, d_biases, (size_t)num_kernels * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-void Conv::free_batch_buffers() {
-    if (!buffers_allocated) return;
-    cudaFree(d_inputs);
-    cudaFree(d_outputs);
-    cudaFree(d_local_grad);
-    cudaFree(d_dInputs);
-    buffers_allocated = false;
-}
-
-void Conv::allocate_batch_buffers(int bs) {
-    free_batch_buffers();
-    int input_size_per_image = channels * input_height * input_width;
-    int output_size_per_image = num_kernels * output_height * output_width;
-    size_t total_input = (size_t)bs * input_size_per_image;
-    size_t total_output = (size_t)bs * output_size_per_image;
-
-    cudaMalloc(&d_inputs, total_input * sizeof(float));
-    cudaMalloc(&d_outputs, total_output * sizeof(float));
-    cudaMalloc(&d_local_grad, total_output * sizeof(float));
-    cudaMalloc(&d_dInputs, total_input * sizeof(float));
-    buffers_allocated = true;
-}
-
-void Conv::forward(float* inputs) {
-    int input_size_per_image = channels * input_height * input_width;
-    int output_size_per_image = num_kernels * output_height * output_width;
-    size_t total_input_size = (size_t)batch_size * input_size_per_image;
-    size_t total_output_size = (size_t)batch_size * output_size_per_image;
-
-    cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemset(d_outputs, 0, total_output_size * sizeof(float));
-
+void Conv::forward(float *d_in) {
+    size_t total_output = (size_t)batch_size * output_size;
+    cudaMemset(d_outputs, 0, total_output * sizeof(float));
     dim3 BLOCK(16, 16);
-    dim3 GRID(
-        (output_width + BLOCK.x - 1) / BLOCK.x,
-        (output_height + BLOCK.y - 1) / BLOCK.y,
-        num_kernels * batch_size
-    );
-
-    conv_forward_kernel<<<GRID, BLOCK>>>(
-        d_inputs, d_kernels, d_biases, d_outputs,
-        channels, input_height, input_width,
-        kernel_size, stride, padding,
-        num_kernels, output_height, output_width,
-        batch_size
-    );
-
-    cudaDeviceSynchronize();
-    cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
+    dim3 GRID((output_width + BLOCK.x - 1) / BLOCK.x, (output_height + BLOCK.y - 1) / BLOCK.y,
+              num_kernels * batch_size);
+    conv_forward_kernel<<<GRID, BLOCK>>>(d_in, d_kernels, d_biases, d_outputs,
+        channels, input_height, input_width, kernel_size, stride, padding,
+        num_kernels, output_height, output_width, batch_size);
 }
 
-float* Conv::backward(float* inputs, float* next_errors, bool /*raw_gradient*/) {
-    int input_size_per_image = channels * input_height * input_width;
+float* Conv::backward(float *d_in, float *d_err, bool) {
     int kernel_total = num_kernels * channels * kernel_size * kernel_size;
-    int output_size_per_image = num_kernels * output_height * output_width;
-    size_t total_input_size = (size_t)batch_size * input_size_per_image;
-    size_t total_output_size = (size_t)batch_size * output_size_per_image;
-
-    float* local_grad = (float*) malloc(sizeof(float) * total_output_size);
-    memcpy(local_grad, next_errors, sizeof(float) * total_output_size);
-
-    cudaMemcpy(d_inputs, inputs, total_input_size * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_local_grad, local_grad, total_output_size * sizeof(float), cudaMemcpyHostToDevice);
-
+    size_t total_input = (size_t)batch_size * size;
     cudaMemset(d_dKernels, 0, kernel_total * sizeof(float));
     cudaMemset(d_dBiases, 0, num_kernels * sizeof(float));
-    cudaMemset(d_dInputs, 0, total_input_size * sizeof(float));
 
     int threads1d = 256;
     dim3 grid1(num_kernels);
-    dbias_kernel<<<grid1, threads1d>>>(d_local_grad, d_dBiases, output_height, output_width, num_kernels, batch_size);
-
+    dbias_kernel<<<grid1, threads1d>>>(d_err, d_dBiases, output_height, output_width, num_kernels, batch_size);
     int blocks = (kernel_total + threads1d - 1) / threads1d;
-    dkernel_kernel<<<blocks, threads1d>>>(
-        d_inputs, d_local_grad, d_dKernels,
-        channels, input_height, input_width, kernel_size,
-        stride, padding, num_kernels, output_height, output_width, batch_size
-    );
+    dkernel_kernel<<<blocks, threads1d>>>(d_in, d_err, d_dKernels, channels, input_height, input_width,
+        kernel_size, stride, padding, num_kernels, output_height, output_width, batch_size);
 
-    dim3 THREADS(16, 16);
-    dim3 grid(
-        (output_width + THREADS.x - 1) / THREADS.x,
-        (output_height + THREADS.y - 1) / THREADS.y,
-        num_kernels * batch_size
-    );
-    dinput_kernel<<<grid, THREADS>>>(
-        d_kernels, d_local_grad, d_dInputs,
-        channels, input_height, input_width, kernel_size,
-        stride, padding, num_kernels, output_height, output_width, batch_size
-    );
-
-    cudaDeviceSynchronize();
+    if (compute_input_grad) {
+        cudaMemset(d_prev_errors, 0, total_input * sizeof(float));
+        dim3 THREADS(16, 16);
+        dim3 grid((output_width + THREADS.x - 1) / THREADS.x, (output_height + THREADS.y - 1) / THREADS.y,
+                  num_kernels * batch_size);
+        dinput_kernel<<<grid, THREADS>>>(d_kernels, d_err, d_prev_errors, channels, input_height, input_width,
+            kernel_size, stride, padding, num_kernels, output_height, output_width, batch_size);
+    }
 
     if (!optimizer_state_allocated) allocate_optimizer_state();
-
-    optimizer->update(d_kernels, d_dKernels,
-                       d_kernel_state.empty() ? nullptr : d_kernel_state.data(),
-                       kernel_total, batch_size);
-
-    optimizer->update(d_biases, d_dBiases,
-                       d_bias_state.empty() ? nullptr : d_bias_state.data(),
-                       num_kernels, batch_size);
-
-    cudaDeviceSynchronize();
-
-    float* prev_errors = (float*) malloc(sizeof(float) * total_input_size);
-    cudaMemcpy(prev_errors, d_dInputs, total_input_size * sizeof(float), cudaMemcpyDeviceToHost);
-
-    free(local_grad);
-    return prev_errors;
+    optimizer->update(d_kernels, d_dKernels, d_kernel_state.empty() ? nullptr : d_kernel_state.data(), kernel_total, batch_size);
+    optimizer->update(d_biases, d_dBiases, d_bias_state.empty() ? nullptr : d_bias_state.data(), num_kernels, batch_size);
+    return compute_input_grad ? d_prev_errors : nullptr;
 }
 
 void Conv::save_weights(std::string path) {

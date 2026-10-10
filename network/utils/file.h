@@ -155,7 +155,6 @@ DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes
     }
 
     build_split(val_fraction);
-
     reset();
 }
 
@@ -237,7 +236,7 @@ void DatasetFile::LoadDataCSV() {
         }
         ++image_count;
     }
-
+    
     input_file.close();
 }
 
@@ -259,13 +258,8 @@ void DatasetFile::gather_batch(int start_pos, int count) {
 
 
 void DatasetFile::get_batch(int batch_index) {
-    if (batch_index < 0 || batch_index >= num_batches) {
-        throw std::out_of_range("DatasetFile::get_batch: index out of range.");
-    }
-
     int start_pos = batch_index * batch_size;
     int count = std::min(batch_size, size - start_pos);
-
     gather_batch(start_pos, count);
     current_batch = batch_index;
 }
