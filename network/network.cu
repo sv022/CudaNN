@@ -197,23 +197,12 @@ float NeuralNetwork::calculateLoss(const float* target_batch, int current_batch_
     return loss;
 }
 
-void NeuralNetwork::forward(float *inputs, int current_batch_size){
-    float *layer_inputs;
-    size_t first_layer_total = (size_t)current_batch_size * layers[0]->size;
-
-    layer_inputs = (float*)malloc(sizeof(float) * first_layer_total);
-    for (size_t i = 0; i < first_layer_total; i++) layer_inputs[i] = inputs[i];
-
+void NeuralNetwork::forward(float *inputs, int current_batch_size) {
+    float *layer_inputs = inputs;
     for (auto &layer : layers) {
         layer->forward(layer_inputs);
-        free(layer_inputs);
-
-        size_t layer_total_output = (size_t)current_batch_size * layer->output_size;
-        layer_inputs = (float*)malloc(sizeof(float) * layer_total_output);
-        for (size_t i = 0; i < layer_total_output; i++) layer_inputs[i] = layer->outputs[i];
+        layer_inputs = layer->outputs;
     }
-
-    free(layer_inputs);
 }
 
 

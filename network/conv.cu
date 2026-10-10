@@ -30,6 +30,7 @@ public:
 
     void set_batch_size(int bs) override;
     void sync_weights_to_device();
+    void sync_weights_to_host();
 
     float* backward(float *inputs, float *targets, bool raw_grad = false) override;
     void forward(float *inputs) override;
@@ -140,6 +141,12 @@ void Conv::sync_weights_to_device() {
     cudaMemcpy(d_biases, biases, num_kernels * sizeof(float), cudaMemcpyHostToDevice);
 }
 
+void Conv::sync_weights_to_host() {
+    int kernel_total = num_kernels * channels * kernel_size * kernel_size;
+    cudaMemcpy(kernels, d_kernels, (size_t)kernel_total * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(biases, d_biases, (size_t)num_kernels * sizeof(float), cudaMemcpyDeviceToHost);
+}
+
 void Conv::free_batch_buffers() {
     if (!buffers_allocated) return;
     cudaFree(d_inputs);
@@ -245,9 +252,6 @@ float* Conv::backward(float* inputs, float* next_errors, bool /*raw_gradient*/) 
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(kernels, d_kernels, kernel_total * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(biases, d_biases, num_kernels * sizeof(float), cudaMemcpyDeviceToHost);
-
     float* prev_errors = (float*) malloc(sizeof(float) * total_input_size);
     cudaMemcpy(prev_errors, d_dInputs, total_input_size * sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -256,6 +260,7 @@ float* Conv::backward(float* inputs, float* next_errors, bool /*raw_gradient*/) 
 }
 
 void Conv::save_weights(std::string path) {
+    sync_weights_to_host();
     std::ofstream file(path, std::ios::binary | std::ios::app);
 
     int kernel_total = num_kernels * channels * kernel_size * kernel_size;

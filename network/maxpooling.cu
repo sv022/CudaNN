@@ -8,8 +8,6 @@ class MaxPooling : public Layer
     int kernel_size, stride;
     int output_width, output_height;
 
-    int* max_indices;
-
     float *d_inputs, *d_outputs;
     int *d_indices;
     float *d_next_errors, *d_dInput;
@@ -47,7 +45,6 @@ MaxPooling::MaxPooling(int in_w, int in_h, int channels, int pool, int s) {
 
     batch_size = 1;
     outputs = (float*)malloc(sizeof(float) * (size_t)batch_size * output_size);
-    max_indices = (int*)malloc(sizeof(int) * (size_t)batch_size * output_size);
 
     d_inputs = d_outputs = d_next_errors = d_dInput = nullptr;
     d_indices = nullptr;
@@ -57,16 +54,14 @@ MaxPooling::MaxPooling(int in_w, int in_h, int channels, int pool, int s) {
 
 MaxPooling::~MaxPooling() {
     free(outputs);
-    free(max_indices);
     free_batch_buffers();
 }
 
 void MaxPooling::set_batch_size(int bs) {
     if (bs == batch_size && buffers_allocated) return;
     if (bs != batch_size) {
-        free(outputs); free(max_indices);
+        free(outputs);
         outputs = (float*)malloc(sizeof(float) * (size_t)bs * output_size);
-        max_indices = (int*)malloc(sizeof(int) * (size_t)bs * output_size);
     }
     batch_size = bs;
     allocate_batch_buffers(bs);
@@ -122,7 +117,6 @@ void MaxPooling::forward(float* inputs) {
 
     cudaDeviceSynchronize();
     cudaMemcpy(outputs, d_outputs, total_output_size * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(max_indices, d_indices, total_output_size * sizeof(int), cudaMemcpyDeviceToHost);
 }
 
 float* MaxPooling::backward(float* inputs, float* next_errors, bool raw_gradient) {

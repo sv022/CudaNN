@@ -101,6 +101,12 @@ int main(int argc, char* argv[]) {
         std::string current_directory = argv[arg_counter++];
         std::string report_file_name = argv[arg_counter++];
 
+        cudaEvent_t start, stop;
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+
+        cudaEventRecord(start, 0);
+
         train(
             structure,
             epochs,
@@ -115,6 +121,18 @@ int main(int argc, char* argv[]) {
             current_directory,
             report_file_name
         );
+
+        cudaEventRecord(stop, 0);
+
+        cudaEventSynchronize(stop);
+
+        float milliseconds = 0;
+        cudaEventElapsedTime(&milliseconds, start, stop);
+
+        std::cout << "Execution Time: " << milliseconds << " ms\n";
+
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
 
     } else {
         if (argc != 8) {

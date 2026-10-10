@@ -28,6 +28,7 @@ public:
 
     void set_batch_size(int bs) override;
     void sync_weights_to_device();
+    void sync_weights_to_host();
 
     float* backward(float *inputs, float *next_errors, bool raw_gradient = false) override;
     void forward(float *inputs) override;
@@ -130,6 +131,11 @@ void Dense::sync_weights_to_device() {
     cudaMemcpy(d_biases, biases, out_size * sizeof(float), cudaMemcpyHostToDevice);
 }
 
+void Dense::sync_weights_to_host() {
+    cudaMemcpy(weights, d_weights, (size_t)size * output_size * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(biases, d_biases, (size_t)output_size * sizeof(float), cudaMemcpyDeviceToHost);
+}
+
 void Dense::free_batch_buffers() {
     if (!buffers_allocated) return;
     cudaFree(d_inputs); cudaFree(d_outputs);
@@ -227,10 +233,7 @@ float* Dense::backward(float *inputs, float *next_errors, bool) {
                        out_size, batch_size);
 
     cudaDeviceSynchronize();
-
-    cudaMemcpy(weights, d_weights, in_size * out_size * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(biases, d_biases, out_size * sizeof(float), cudaMemcpyDeviceToHost);
-
+    
     float *prev_errors = (float*)malloc(sizeof(float) * total_in);
     cudaMemcpy(prev_errors, d_prev_errors, total_in * sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -239,6 +242,7 @@ float* Dense::backward(float *inputs, float *next_errors, bool) {
 }
 
 void Dense::save_weights(std::string path) {
+    sync_weights_to_host();
     std::ofstream file(path, std::ios::binary | std::ios::app);
 
     file.write(reinterpret_cast<char*>(weights), sizeof(float) * size * output_size);
