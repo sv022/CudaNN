@@ -8,12 +8,10 @@ private:
 
     float *d_weights, *d_biases;
     float *d_weight_grad_sum, *d_bias_grad_sum;
-    float *d_weights_T;
 
     std::vector<float*> d_weight_state;
     std::vector<float*> d_bias_state;
 
-    float *d_inputs_T;
     bool buffers_allocated;
     bool optimizer_state_allocated;
 
@@ -55,11 +53,9 @@ Dense::Dense(int layer_size, int next_size){
     cudaMalloc(&d_biases, out_size * sizeof(float));
     cudaMalloc(&d_weight_grad_sum, in_size * out_size * sizeof(float));
     cudaMalloc(&d_bias_grad_sum, out_size * sizeof(float));
-    cudaMalloc(&d_weights_T, out_size * in_size * sizeof(float));
 
     sync_weights_to_device();
 
-    d_inputs_T = nullptr;
     buffers_allocated = false;
     allocate_batch_buffers(batch_size);
 
@@ -70,7 +66,6 @@ Dense::~Dense() {
     free(outputs); free(weights); free(biases);
     cudaFree(d_weights); cudaFree(d_biases);
     cudaFree(d_weight_grad_sum); cudaFree(d_bias_grad_sum);
-    cudaFree(d_weights_T);
     free_batch_buffers();
     free_optimizer_state();
 }
@@ -111,14 +106,11 @@ void Dense::set_batch_size(int bs) {
 
 void Dense::free_batch_buffers() {
     if (!buffers_allocated) return;
-    cudaFree(d_inputs_T); d_inputs_T = nullptr;
     free_io();
     buffers_allocated = false;
 }
-
 void Dense::allocate_batch_buffers(int bs) {
     free_batch_buffers();
-    cudaMalloc(&d_inputs_T, (size_t)bs * size * sizeof(float));
     alloc_io(bs);
     buffers_allocated = true;
 }
@@ -143,22 +135,15 @@ void Dense::forward(float *d_in) {
 
 float* Dense::backward(float *d_in, float *d_err, bool) {
     int in_size = size, out_size = output_size;
-    dim3 THREADS(32, 32);
 
-    dim3 IN_TRANS_BLOCKS((in_size + THREADS.x - 1) / THREADS.x, (batch_size + THREADS.y - 1) / THREADS.y);
-    Kernel::transpose<<<IN_TRANS_BLOCKS, THREADS>>>(d_in, d_inputs_T, batch_size, in_size);
+    dim3 wg_grid((in_size + 127) / 128, out_size);
+    dense_dweights_kernel<<<wg_grid, 128>>>(d_in, d_err, d_weight_grad_sum, batch_size, in_size, out_size);
 
-    dim3 WG_BLOCKS((out_size + THREADS.x - 1) / THREADS.x, (in_size + THREADS.y - 1) / THREADS.y);
-    Kernel::dot<<<WG_BLOCKS, THREADS>>>(d_inputs_T, d_err, d_weight_grad_sum, in_size, batch_size, out_size);
-
-    int bias_threads = 256, bias_blocks = (out_size + bias_threads - 1) / bias_threads;
-    Kernel::sum_rows<<<bias_blocks, bias_threads>>>(d_err, d_bias_grad_sum, batch_size, out_size);
+    dense_dbias_kernel<<<out_size, 256>>>(d_err, d_bias_grad_sum, batch_size, out_size);
 
     if (compute_input_grad) {
-        dim3 W_TRANS_BLOCKS((out_size + THREADS.x - 1) / THREADS.x, (in_size + THREADS.y - 1) / THREADS.y);
-        Kernel::transpose<<<W_TRANS_BLOCKS, THREADS>>>(d_weights, d_weights_T, in_size, out_size);
-        dim3 DIN_BLOCKS((in_size + THREADS.x - 1) / THREADS.x, (batch_size + THREADS.y - 1) / THREADS.y);
-        Kernel::dot<<<DIN_BLOCKS, THREADS>>>(d_err, d_weights_T, d_prev_errors, batch_size, out_size, in_size);
+        dim3 dx_grid((in_size + 127) / 128, batch_size);
+        dense_dinput_kernel<<<dx_grid, 128>>>(d_err, d_weights, d_prev_errors, batch_size, in_size, out_size);
     }
 
     if (!optimizer_state_allocated) allocate_optimizer_state();
