@@ -1,6 +1,18 @@
 #pragma once
 
 
+__device__ __forceinline__ float block_reduce_sum(float v) {
+    __shared__ float sh[32];
+    int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+    for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o);
+    if (lane == 0) sh[warp] = v;
+    __syncthreads();
+    v = (lane < (blockDim.x >> 5)) ? sh[lane] : 0.0f;
+    if (warp == 0) for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o);
+    return v;
+}
+
+
 __global__ void conv_forward_kernel(
     const float* __restrict__ inputs,
     const float* __restrict__ kernels,
@@ -52,66 +64,45 @@ __global__ void conv_forward_kernel(
 
 
 __global__ void dbias_kernel(const float* __restrict__ dOut, float* dBiases,
-                              int OH, int OW, int N, int batch_size)
+                             int OH, int OW, int N, int batch_size)
 {
-    int n = blockIdx.x;
-    int tid = threadIdx.x;
-    int stride_t = blockDim.x;
-
+    int n = blockIdx.x, b = blockIdx.y;
     int size = OH * OW;
+    const float* base = dOut + (size_t)b * N * size + (size_t)n * size;
     float s = 0.0f;
-
-    for (int b = 0; b < batch_size; ++b) {
-        const float* base = dOut + (size_t)b * N * size + (size_t)n * size;
-        for (int idx = tid; idx < size; idx += stride_t) s += base[idx];
-    }
-
-    atomicAdd(&dBiases[n], s);
+    for (int idx = threadIdx.x; idx < size; idx += blockDim.x) s += base[idx];
+    s = block_reduce_sum(s);
+    if (threadIdx.x == 0) atomicAdd(&dBiases[n], s);
 }
 
-__global__
-void dkernel_kernel(const float* __restrict__ inputs, const float* __restrict__ dOut,
-                    float* dKernels,
-                    int C, int H, int W,
-                    int K, int S, int P,
-                    int N, int OH, int OW,
-                    int batch_size)
+__global__ void dkernel_kernel(const float* __restrict__ inputs, const float* __restrict__ dOut,
+                               float* dKernels,
+                               int C, int H, int W, int K, int S, int P,
+                               int N, int OH, int OW, int batch_size)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = N * C * K * K;
-    if (idx >= total) return;
-
+    int widx = blockIdx.x;
     int kv = K * K;
+    int n = widx / (C * kv);
+    int rem = widx % (C * kv);
+    int c = rem / kv; rem %= kv;
+    int u = rem / K, v = rem % K;
 
-    int n = idx / (C * kv);
-    int rem = idx % (C * kv);
-    int c = rem / kv;
-    rem = rem % kv;
-    int u = rem / K;
-    int v = rem % K;
+    int OHW = OH * OW;
+    long long total = (long long)batch_size * OHW;
+    long long stride_t = (long long)gridDim.y * blockDim.x;
 
     float grad = 0.0f;
-
-    for (int b = 0; b < batch_size; ++b) {
-        const float* inputs_b = inputs + (size_t)b * C * H * W;
-        const float* dout_base = dOut + (size_t)b * N * OH * OW + (size_t)n * OH * OW;
-
-        for (int i = 0; i < OH; ++i) {
-            int in_y = i * S - P + u;
-            if (in_y < 0 || in_y >= H) continue;
-
-            for (int j = 0; j < OW; ++j) {
-                int in_x = j * S - P + v;
-                if (in_x < 0 || in_x >= W) continue;
-
-                float x = inputs_b[c * (H * W) + in_y * W + in_x];
-                float dout = dout_base[i * OW + j];
-                grad += x * dout;
-            }
-        }
+    for (long long t = (long long)blockIdx.y * blockDim.x + threadIdx.x; t < total; t += stride_t) {
+        int b = (int)(t / OHW);
+        int p = (int)(t % OHW);
+        int in_y = (p / OW) * S - P + u;
+        int in_x = (p % OW) * S - P + v;
+        if (in_y < 0 || in_y >= H || in_x < 0 || in_x >= W) continue;
+        grad += inputs[(size_t)b * C * H * W + c * (H * W) + in_y * W + in_x]
+              * dOut[(size_t)b * N * OHW + (size_t)n * OHW + p];
     }
-
-    dKernels[idx] = grad;
+    grad = block_reduce_sum(grad);
+    if (threadIdx.x == 0) atomicAdd(&dKernels[widx], grad);
 }
 
 __global__

@@ -78,7 +78,6 @@ void MaxPooling::allocate_batch_buffers(int bs) {
 }
 
 void MaxPooling::forward(float *d_in) {
-    cudaMemset(d_outputs, 0, (size_t)batch_size * output_size * sizeof(float));
     dim3 BLOCK(16, 16);
     dim3 GRID((output_width + BLOCK.x - 1) / BLOCK.x, (output_height + BLOCK.y - 1) / BLOCK.y,
               channels * batch_size);

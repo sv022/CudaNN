@@ -150,8 +150,6 @@ void Conv::sync_weights_to_host() {
 }
 
 void Conv::forward(float *d_in) {
-    size_t total_output = (size_t)batch_size * output_size;
-    cudaMemset(d_outputs, 0, total_output * sizeof(float));
     dim3 BLOCK(16, 16);
     dim3 GRID((output_width + BLOCK.x - 1) / BLOCK.x, (output_height + BLOCK.y - 1) / BLOCK.y,
               num_kernels * batch_size);
@@ -166,12 +164,13 @@ float* Conv::backward(float *d_in, float *d_err, bool) {
     cudaMemset(d_dKernels, 0, kernel_total * sizeof(float));
     cudaMemset(d_dBiases, 0, num_kernels * sizeof(float));
 
-    int threads1d = 256;
-    dim3 grid1(num_kernels);
-    dbias_kernel<<<grid1, threads1d>>>(d_err, d_dBiases, output_height, output_width, num_kernels, batch_size);
-    int blocks = (kernel_total + threads1d - 1) / threads1d;
-    dkernel_kernel<<<blocks, threads1d>>>(d_in, d_err, d_dKernels, channels, input_height, input_width,
-        kernel_size, stride, padding, num_kernels, output_height, output_width, batch_size);
+    dbias_kernel<<<dim3(num_kernels, batch_size), 256>>>(d_err, d_dBiases, output_height, output_width, num_kernels, batch_size);
+
+    long long total = (long long)batch_size * output_height * output_width;
+    int splits = (int)std::min<long long>(64, std::max<long long>(1, (total + 4095) / 4096));
+    dkernel_kernel<<<dim3(kernel_total, splits), 256>>>(d_in, d_err, d_dKernels,
+    channels, input_height, input_width, kernel_size, stride, padding,
+    num_kernels, output_height, output_width, batch_size);
 
     if (compute_input_grad) {
         cudaMemset(d_prev_errors, 0, total_input * sizeof(float));
