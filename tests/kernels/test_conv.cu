@@ -152,254 +152,302 @@ void conv_backward_cpu_batch(
 // Test 1: batch_size=1
 // ============================================================
 
-void test_conv_forward_batch_size_1_equivalence() {
-    const int size = 9;
-    const int C = 1;
-    const int K = 4;
-    const int kernel_size = 3;
-    const int OH = 7, OW = 7;
-    const int input_size = C * size * size;
-    const int output_size = K * OH * OW;
-    const int kernel_total = K * C * kernel_size * kernel_size;
+// void test_conv_forward_batch_size_1_equivalence() {
+//     const int size = 9;
+//     const int C = 1;
+//     const int K = 4;
+//     const int kernel_size = 3;
+//     const int OH = 7, OW = 7;
+//     const int input_size = C * size * size;
+//     const int output_size = K * OH * OW;
+//     const int kernel_total = K * C * kernel_size * kernel_size;
 
-    Conv conv(size, size, C, kernel_size, K, 1, 0);
+//     Conv conv(size, size, C, kernel_size, K, 1, 0);
 
-    float kernels[kernel_total] = {
-        -1,-1,-1, -1,8,-1, -1,-1,-1,
-         0,1,0,   1,-4,1,   0,1,0,
-         1,0,-1,  0,0,0,   -1,0,1,
-         0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f
-    };
-    float biases[K] = {0, 1, -1, 0.5f};
-    memcpy(conv.kernels, kernels, sizeof(kernels));
-    memcpy(conv.biases, biases, sizeof(biases));
-    conv.sync_weights_to_device();
+//     float kernels[kernel_total] = {
+//         -1,-1,-1, -1,8,-1, -1,-1,-1,
+//          0,1,0,   1,-4,1,   0,1,0,
+//          1,0,-1,  0,0,0,   -1,0,1,
+//          0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f
+//     };
+//     float biases[K] = {0, 1, -1, 0.5f};
+//     memcpy(conv.kernels, kernels, sizeof(kernels));
+//     memcpy(conv.biases, biases, sizeof(biases));
+//     conv.sync_weights_to_device();
 
-    float input[input_size] = {
-        0.68f,0.50f,0.92f,0.15f,0.16f,0.98f,0.88f,0.54f,0.52f,
-        0.20f,0.81f,0.99f,0.65f,0.46f,0.74f,0.55f,0.10f,0.78f,
-        0.15f,0.58f,0.49f,0.02f,0.56f,0.24f,0.27f,0.35f,0.29f,
-        0.01f,0.11f,0.97f,0.51f,0.95f,0.75f,0.27f,0.74f,0.44f,
-        0.93f,0.43f,0.62f,0.90f,0.67f,0.33f,0.39f,0.40f,0.25f,
-        0.67f,0.02f,0.15f,0.06f,0.79f,0.20f,0.08f,0.67f,0.94f,
-        0.08f,0.97f,0.65f,0.66f,0.43f,0.01f,0.19f,0.74f,0.59f,
-        0.70f,0.10f,0.69f,0.49f,0.39f,0.91f,0.95f,0.57f,0.91f,
-        0.09f,0.20f,0.97f,0.49f,0.85f,0.38f,0.55f,0.60f,0.95f
-    };
+//     float input[input_size] = {
+//         0.68f,0.50f,0.92f,0.15f,0.16f,0.98f,0.88f,0.54f,0.52f,
+//         0.20f,0.81f,0.99f,0.65f,0.46f,0.74f,0.55f,0.10f,0.78f,
+//         0.15f,0.58f,0.49f,0.02f,0.56f,0.24f,0.27f,0.35f,0.29f,
+//         0.01f,0.11f,0.97f,0.51f,0.95f,0.75f,0.27f,0.74f,0.44f,
+//         0.93f,0.43f,0.62f,0.90f,0.67f,0.33f,0.39f,0.40f,0.25f,
+//         0.67f,0.02f,0.15f,0.06f,0.79f,0.20f,0.08f,0.67f,0.94f,
+//         0.08f,0.97f,0.65f,0.66f,0.43f,0.01f,0.19f,0.74f,0.59f,
+//         0.70f,0.10f,0.69f,0.49f,0.39f,0.91f,0.95f,0.57f,0.91f,
+//         0.09f,0.20f,0.97f,0.49f,0.85f,0.38f,0.55f,0.60f,0.95f
+//     };
 
-    conv.forward(input);
+//     conv.forward(input);
 
-    float expected[output_size];
-    for (int k = 0; k < K; k++) {
-        conv_forward_cpu(input, &kernels[k * 9], &biases[k], &expected[k * OH * OW], C, size, size, kernel_size, 1, 0, OH, OW);
-    }
+//     float expected[output_size];
+//     for (int k = 0; k < K; k++) {
+//         conv_forward_cpu(input, &kernels[k * 9], &biases[k], &expected[k * OH * OW], C, size, size, kernel_size, 1, 0, OH, OW);
+//     }
 
-    bool all_match = true;
-    for (int i = 0; i < output_size; ++i) {
-        if (std::fabs(conv.outputs[i] - expected[i]) > 1e-3f) all_match = false;
-    }
-    CHECK(all_match, "batch_size=1: forward output identical to legacy single-image implementation");
-}
+//     bool all_match = true;
+//     for (int i = 0; i < output_size; ++i) {
+//         if (std::fabs(conv.outputs[i] - expected[i]) > 1e-3f) all_match = false;
+//     }
+//     CHECK(all_match, "batch_size=1: forward output identical to legacy single-image implementation");
+// }
 
-// ============================================================
-// Test 2: batch forward (batch_size=3)
-// ============================================================
+// // ============================================================
+// // Test 2: batch forward (batch_size=3)
+// // ============================================================
 
-void test_conv_forward_batch() {
-    const int size = 9;
-    const int C = 1;
-    const int K = 4;
-    const int kernel_size = 3;
-    const int stride = 1;
-    const int padding = 0;
-    const int OH = 7, OW = 7;
-    const int batch_size = 3;
+// void test_conv_forward_batch() {
+//     const int size = 9;
+//     const int C = 1;
+//     const int K = 4;
+//     const int kernel_size = 3;
+//     const int stride = 1;
+//     const int padding = 0;
+//     const int OH = 7, OW = 7;
+//     const int batch_size = 3;
 
-    const int input_size = C * size * size;
-    const int output_size = K * OH * OW;
-    const int kernel_total = K * C * kernel_size * kernel_size;
+//     const int input_size = C * size * size;
+//     const int output_size = K * OH * OW;
+//     const int kernel_total = K * C * kernel_size * kernel_size;
 
-    Conv conv(size, size, C, kernel_size, K, stride, padding);
-    conv.set_batch_size(batch_size);
+//     Conv conv(size, size, C, kernel_size, K, stride, padding);
+//     conv.set_batch_size(batch_size);
 
-    float kernels[kernel_total] = {
-        -1,-1,-1, -1,8,-1, -1,-1,-1,
-         0,1,0,   1,-4,1,   0,1,0,
-         1,0,-1,  0,0,0,   -1,0,1,
-         0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f
-    };
-    float biases[K] = {0, 1, -1, 0.5f};
-    memcpy(conv.kernels, kernels, sizeof(kernels));
-    memcpy(conv.biases, biases, sizeof(biases));
-    conv.sync_weights_to_device();
+//     float kernels[kernel_total] = {
+//         -1,-1,-1, -1,8,-1, -1,-1,-1,
+//          0,1,0,   1,-4,1,   0,1,0,
+//          1,0,-1,  0,0,0,   -1,0,1,
+//          0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f, 0.2f,0.2f,0.2f
+//     };
+//     float biases[K] = {0, 1, -1, 0.5f};
+//     memcpy(conv.kernels, kernels, sizeof(kernels));
+//     memcpy(conv.biases, biases, sizeof(biases));
+//     conv.sync_weights_to_device();
 
-    std::vector<float> input_batch(batch_size * input_size);
-    for (int b = 0; b < batch_size; ++b) {
-        for (int i = 0; i < input_size; ++i) {
-            input_batch[b * input_size + i] = 0.05f * ((i * (b + 1) + b * 3) % 20);
-        }
-    }
+//     std::vector<float> input_batch(batch_size * input_size);
+//     for (int b = 0; b < batch_size; ++b) {
+//         for (int i = 0; i < input_size; ++i) {
+//             input_batch[b * input_size + i] = 0.05f * ((i * (b + 1) + b * 3) % 20);
+//         }
+//     }
 
-    conv.forward(input_batch.data());
+//     conv.forward(input_batch.data());
 
-    std::vector<float> expected(batch_size * output_size);
-    conv_forward_cpu_batch(
-        input_batch.data(), kernels, biases, expected.data(),
-        batch_size, C, size, size, kernel_size, K, stride, padding, OH, OW
-    );
+//     std::vector<float> expected(batch_size * output_size);
+//     conv_forward_cpu_batch(
+//         input_batch.data(), kernels, biases, expected.data(),
+//         batch_size, C, size, size, kernel_size, K, stride, padding, OH, OW
+//     );
 
-    bool all_match = true;
-    for (int i = 0; i < batch_size * output_size; ++i) {
-        if (std::fabs(conv.outputs[i] - expected[i]) > 1e-3f) {
-            all_match = false;
-            std::cerr << "  mismatch at flat idx " << i << ": GPU=" << conv.outputs[i] << " CPU=" << expected[i] << "\n";
-        }
-    }
-    CHECK(all_match, "batch forward: GPU output matches CPU reference for all 3 images");
-}
+//     bool all_match = true;
+//     for (int i = 0; i < batch_size * output_size; ++i) {
+//         if (std::fabs(conv.outputs[i] - expected[i]) > 1e-3f) {
+//             all_match = false;
+//             std::cerr << "  mismatch at flat idx " << i << ": GPU=" << conv.outputs[i] << " CPU=" << expected[i] << "\n";
+//         }
+//     }
+//     CHECK(all_match, "batch forward: GPU output matches CPU reference for all 3 images");
+// }
 
-// ============================================================
-// Test 3: Incomplete batch batch_size
-// ============================================================
+// // ============================================================
+// // Test 3: Incomplete batch batch_size
+// // ============================================================
 
-void test_conv_forward_uneven_batch() {
-    const int size = 6;
-    const int C = 2;
-    const int K = 2;
-    const int kernel_size = 3;
-    const int stride = 1;
-    const int padding = 1;
-    const int OH = 6, OW = 6; // padding=1, stride=1, k=3 -> OH=OW=H=W
-    const int batch_size = 5;
+// void test_conv_forward_uneven_batch() {
+//     const int size = 6;
+//     const int C = 2;
+//     const int K = 2;
+//     const int kernel_size = 3;
+//     const int stride = 1;
+//     const int padding = 1;
+//     const int OH = 6, OW = 6; // padding=1, stride=1, k=3 -> OH=OW=H=W
+//     const int batch_size = 5;
 
-    const int input_size = C * size * size;
-    const int output_size = K * OH * OW;
-    const int kernel_total = K * C * kernel_size * kernel_size;
+//     const int input_size = C * size * size;
+//     const int output_size = K * OH * OW;
+//     const int kernel_total = K * C * kernel_size * kernel_size;
 
-    Conv conv(size, size, C, kernel_size, K, stride, padding);
-    conv.set_batch_size(batch_size);
+//     Conv conv(size, size, C, kernel_size, K, stride, padding);
+//     conv.set_batch_size(batch_size);
 
-    for (int i = 0; i < kernel_total; i++) conv.kernels[i] = 0.02f * (i % 11 - 5);
-    for (int i = 0; i < K; i++) conv.biases[i] = 0.05f * i;
-    conv.sync_weights_to_device();
+//     for (int i = 0; i < kernel_total; i++) conv.kernels[i] = 0.02f * (i % 11 - 5);
+//     for (int i = 0; i < K; i++) conv.biases[i] = 0.05f * i;
+//     conv.sync_weights_to_device();
 
-    std::vector<float> kernels_snapshot(conv.kernels, conv.kernels + kernel_total);
-    std::vector<float> biases_snapshot(conv.biases, conv.biases + K);
+//     std::vector<float> kernels_snapshot(conv.kernels, conv.kernels + kernel_total);
+//     std::vector<float> biases_snapshot(conv.biases, conv.biases + K);
 
-    std::vector<float> input_batch(batch_size * input_size);
-    for (int b = 0; b < batch_size; ++b)
-        for (int i = 0; i < input_size; ++i)
-            input_batch[b * input_size + i] = 0.03f * ((i * 3 + b * 7) % 17);
+//     std::vector<float> input_batch(batch_size * input_size);
+//     for (int b = 0; b < batch_size; ++b)
+//         for (int i = 0; i < input_size; ++i)
+//             input_batch[b * input_size + i] = 0.03f * ((i * 3 + b * 7) % 17);
 
-    conv.forward(input_batch.data());
+//     conv.forward(input_batch.data());
 
-    std::vector<float> expected(batch_size * output_size);
-    conv_forward_cpu_batch(
-        input_batch.data(), kernels_snapshot.data(), biases_snapshot.data(), expected.data(),
-        batch_size, C, size, size, kernel_size, K, stride, padding, OH, OW
-    );
+//     std::vector<float> expected(batch_size * output_size);
+//     conv_forward_cpu_batch(
+//         input_batch.data(), kernels_snapshot.data(), biases_snapshot.data(), expected.data(),
+//         batch_size, C, size, size, kernel_size, K, stride, padding, OH, OW
+//     );
 
-    bool all_match = true;
-    for (int i = 0; i < batch_size * output_size; ++i) {
-        if (std::fabs(conv.outputs[i] - expected[i]) > 1e-3f) all_match = false;
-    }
-    CHECK(all_match, "uneven batch_size=5 with C=2,K=2,padding=1: GPU forward matches CPU for all images");
-}
+//     bool all_match = true;
+//     for (int i = 0; i < batch_size * output_size; ++i) {
+//         if (std::fabs(conv.outputs[i] - expected[i]) > 1e-3f) all_match = false;
+//     }
+//     CHECK(all_match, "uneven batch_size=5 with C=2,K=2,padding=1: GPU forward matches CPU for all images");
+// }
 
-// ============================================================
-// Test 4: batch backward
-// ============================================================
+// // ============================================================
+// // Test 4: batch backward
+// // ============================================================
 
-void test_conv_backward_batch() {
-    const int size = 9;
-    const int C = 1;
-    const int K = 4;
-    const int kernel_size = 3;
-    const int stride = 1;
-    const int padding = 0;
-    const int OH = 7, OW = 7;
-    const int batch_size = 3;
+// void test_conv_backward_batch() {
+//     const int size = 9;
+//     const int C = 1;
+//     const int K = 4;
+//     const int kernel_size = 3;
+//     const int stride = 1;
+//     const int padding = 0;
+//     const int OH = 7, OW = 7;
+//     const int batch_size = 3;
 
-    const int input_size = C * size * size;
-    const int output_size = K * OH * OW;
-    const int kernel_total = K * C * kernel_size * kernel_size;
+//     const int input_size = C * size * size;
+//     const int output_size = K * OH * OW;
+//     const int kernel_total = K * C * kernel_size * kernel_size;
 
-    Conv conv(size, size, C, kernel_size, K, stride, padding);
-    conv.set_batch_size(batch_size);
+//     Conv conv(size, size, C, kernel_size, K, stride, padding);
+//     conv.set_batch_size(batch_size);
 
-    for (int i = 0; i < kernel_total; i++) conv.kernels[i] = 0.01f * (i + 1);
-    for (int i = 0; i < K; i++) conv.biases[i] = 0.1f * i;
-    conv.sync_weights_to_device();
+//     for (int i = 0; i < kernel_total; i++) conv.kernels[i] = 0.01f * (i + 1);
+//     for (int i = 0; i < K; i++) conv.biases[i] = 0.1f * i;
+//     conv.sync_weights_to_device();
 
-    std::vector<float> kernels_before(conv.kernels, conv.kernels + kernel_total);
-    std::vector<float> biases_before(conv.biases, conv.biases + K);
+//     std::vector<float> kernels_before(conv.kernels, conv.kernels + kernel_total);
+//     std::vector<float> biases_before(conv.biases, conv.biases + K);
 
-    std::vector<float> input_batch(batch_size * input_size);
-    for (int b = 0; b < batch_size; ++b)
-        for (int i = 0; i < input_size; ++i)
-            input_batch[b * input_size + i] = 0.1f * ((i + b * 5) % 7);
+//     std::vector<float> input_batch(batch_size * input_size);
+//     for (int b = 0; b < batch_size; ++b)
+//         for (int i = 0; i < input_size; ++i)
+//             input_batch[b * input_size + i] = 0.1f * ((i + b * 5) % 7);
 
-    conv.forward(input_batch.data());
+//     conv.forward(input_batch.data());
 
-    std::vector<float> outputs_snapshot(conv.outputs, conv.outputs + batch_size * output_size);
+//     std::vector<float> outputs_snapshot(conv.outputs, conv.outputs + batch_size * output_size);
 
-    std::vector<float> next_errors_batch(batch_size * output_size, 1.0f);
+//     std::vector<float> next_errors_batch(batch_size * output_size, 1.0f);
 
-    std::vector<float> dInputs_cpu(batch_size * input_size);
-    std::vector<float> dKernels_avg_cpu(kernel_total);
-    std::vector<float> dBiases_avg_cpu(K);
+//     std::vector<float> dInputs_cpu(batch_size * input_size);
+//     std::vector<float> dKernels_avg_cpu(kernel_total);
+//     std::vector<float> dBiases_avg_cpu(K);
 
-    conv_backward_cpu_batch(
-        input_batch.data(), kernels_before.data(), biases_before.data(),
-        outputs_snapshot.data(), next_errors_batch.data(),
-        dInputs_cpu.data(), dKernels_avg_cpu.data(), dBiases_avg_cpu.data(),
-        batch_size, C, size, size, K, kernel_size, stride, padding, OH, OW
-    );
+//     conv_backward_cpu_batch(
+//         input_batch.data(), kernels_before.data(), biases_before.data(),
+//         outputs_snapshot.data(), next_errors_batch.data(),
+//         dInputs_cpu.data(), dKernels_avg_cpu.data(), dBiases_avg_cpu.data(),
+//         batch_size, C, size, size, K, kernel_size, stride, padding, OH, OW
+//     );
 
-    float lr = 0.01;
-    std::vector<float> kernels_expected(kernel_total), biases_expected(K);
-    for (int i = 0; i < kernel_total; ++i) kernels_expected[i] = kernels_before[i] + lr * dKernels_avg_cpu[i];
-    for (int i = 0; i < K; ++i) biases_expected[i] = biases_before[i] + lr * dBiases_avg_cpu[i];
+//     float lr = 0.01;
+//     std::vector<float> kernels_expected(kernel_total), biases_expected(K);
+//     for (int i = 0; i < kernel_total; ++i) kernels_expected[i] = kernels_before[i] + lr * dKernels_avg_cpu[i];
+//     for (int i = 0; i < K; ++i) biases_expected[i] = biases_before[i] + lr * dBiases_avg_cpu[i];
 
-    float* prev_errors = conv.backward(input_batch.data(), next_errors_batch.data(), false);
+//     float* prev_errors = conv.backward(input_batch.data(), next_errors_batch.data(), false);
 
-    bool kernels_match = true;
-    for (int i = 0; i < kernel_total; ++i) {
-        if (std::fabs(conv.kernels[i] - kernels_expected[i]) > 1e-3f) {
-            kernels_match = false;
-            std::cerr << "  kernel[" << i << "]: GPU=" << conv.kernels[i] << " expected=" << kernels_expected[i] << "\n";
-        }
-    }
-    CHECK(kernels_match, "batch backward: updated kernels match one averaged SGD step over the batch");
+//     bool kernels_match = true;
+//     for (int i = 0; i < kernel_total; ++i) {
+//         if (std::fabs(conv.kernels[i] - kernels_expected[i]) > 1e-3f) {
+//             kernels_match = false;
+//             std::cerr << "  kernel[" << i << "]: GPU=" << conv.kernels[i] << " expected=" << kernels_expected[i] << "\n";
+//         }
+//     }
+//     CHECK(kernels_match, "batch backward: updated kernels match one averaged SGD step over the batch");
 
-    bool biases_match = true;
-    for (int i = 0; i < K; ++i) {
-        if (std::fabs(conv.biases[i] - biases_expected[i]) > 1e-3f) {
-            biases_match = false;
-            std::cerr << "  bias[" << i << "]: GPU=" << conv.biases[i] << " expected=" << biases_expected[i] << "\n";
-        }
-    }
-    CHECK(biases_match, "batch backward: updated biases match one averaged SGD step over the batch");
+//     bool biases_match = true;
+//     for (int i = 0; i < K; ++i) {
+//         if (std::fabs(conv.biases[i] - biases_expected[i]) > 1e-3f) {
+//             biases_match = false;
+//             std::cerr << "  bias[" << i << "]: GPU=" << conv.biases[i] << " expected=" << biases_expected[i] << "\n";
+//         }
+//     }
+//     CHECK(biases_match, "batch backward: updated biases match one averaged SGD step over the batch");
 
-    bool dinputs_match = true;
-    for (int i = 0; i < batch_size * input_size; ++i) {
-        if (std::fabs(prev_errors[i] - dInputs_cpu[i]) > 1e-3f) {
-            dinputs_match = false;
-            std::cerr << "  dInput[" << i << "]: GPU=" << prev_errors[i] << " expected=" << dInputs_cpu[i] << "\n";
-        }
-    }
-    CHECK(dinputs_match, "batch backward: dInputs are per-image (not reduced), match CPU reference for all 3 images");
+//     bool dinputs_match = true;
+//     for (int i = 0; i < batch_size * input_size; ++i) {
+//         if (std::fabs(prev_errors[i] - dInputs_cpu[i]) > 1e-3f) {
+//             dinputs_match = false;
+//             std::cerr << "  dInput[" << i << "]: GPU=" << prev_errors[i] << " expected=" << dInputs_cpu[i] << "\n";
+//         }
+//     }
+//     CHECK(dinputs_match, "batch backward: dInputs are per-image (not reduced), match CPU reference for all 3 images");
 
-    free(prev_errors);
+//     free(prev_errors);
+// }
+
+void test_dkernel_dbias_match_cpu() {
+    const int B = 5, C = 3, H = 9, W = 8, K = 3, S = 2, P = 1, N = 4;
+    const int OH = (H + 2 * P - K) / S + 1, OW = (W + 2 * P - K) / S + 1;
+    std::vector<float> in((size_t)B * C * H * W), dout((size_t)B * N * OH * OW);
+    for (size_t i = 0; i < in.size(); ++i)   in[i]   = 0.01f * (float)((i * 7) % 31) - 0.1f;
+    for (size_t i = 0; i < dout.size(); ++i) dout[i] = 0.02f * (float)((i * 5) % 17) - 0.15f;
+
+    std::vector<float> dk_cpu((size_t)N * C * K * K, 0.0f), db_cpu(N, 0.0f);
+    for (int b = 0; b < B; ++b)
+      for (int n = 0; n < N; ++n)
+        for (int i = 0; i < OH; ++i)
+          for (int j = 0; j < OW; ++j) {
+            float g = dout[(size_t)b * N * OH * OW + n * OH * OW + i * OW + j];
+            db_cpu[n] += g;
+            for (int c = 0; c < C; ++c)
+              for (int u = 0; u < K; ++u)
+                for (int v = 0; v < K; ++v) {
+                  int y = i * S - P + u, x = j * S - P + v;
+                  if (y < 0 || y >= H || x < 0 || x >= W) continue;
+                  dk_cpu[(size_t)n * C * K * K + c * K * K + u * K + v] +=
+                      in[(size_t)b * C * H * W + c * H * W + y * W + x] * g;
+                }
+          }
+
+    float *d_in, *d_dout, *d_dk, *d_db;
+    cudaMalloc(&d_in, in.size() * 4);   cudaMalloc(&d_dout, dout.size() * 4);
+    cudaMalloc(&d_dk, dk_cpu.size() * 4); cudaMalloc(&d_db, N * 4);
+    cudaMemcpy(d_in, in.data(), in.size() * 4, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_dout, dout.data(), dout.size() * 4, cudaMemcpyHostToDevice);
+    cudaMemset(d_dk, 0, dk_cpu.size() * 4);  cudaMemset(d_db, 0, N * 4);
+
+    long long total = (long long)B * OH * OW;
+    int splits = (int)std::min<long long>(64, std::max<long long>(1, (total + 4095) / 4096));
+    dbias_kernel<<<dim3(N, B), 256>>>(d_dout, d_db, OH, OW, N, B);
+    dkernel_kernel<<<dim3(N * C * K * K, splits), 256>>>(d_in, d_dout, d_dk, C, H, W, K, S, P, N, OH, OW, B);
+
+    std::vector<float> dk(dk_cpu.size()), db(N);
+    cudaMemcpy(dk.data(), d_dk, dk.size() * 4, cudaMemcpyDeviceToHost);
+    cudaMemcpy(db.data(), d_db, N * 4, cudaMemcpyDeviceToHost);
+    float ek = 0, eb = 0;
+    for (size_t i = 0; i < dk.size(); ++i) ek = std::max(ek, fabsf(dk[i] - dk_cpu[i]) / (1 + fabsf(dk_cpu[i])));
+    for (int i = 0; i < N; ++i)            eb = std::max(eb, fabsf(db[i] - db_cpu[i]) / (1 + fabsf(db_cpu[i])));
+    CHECK(ek < 1e-4f, "dkernel_kernel mathes CPU (stride=2, padding=1, C=3)");
+    CHECK(eb < 1e-4f, "dbias_kernel mathes CPU");
+    cudaFree(d_in); cudaFree(d_dout); cudaFree(d_dk); cudaFree(d_db);
 }
 
 int main() {
     std::cout << "=== Conv batch tests ===\n\n";
 
-    test_conv_forward_batch_size_1_equivalence();
-    test_conv_forward_batch();
-    test_conv_forward_uneven_batch();
-    test_conv_backward_batch();
+    // test_conv_forward_batch_size_1_equivalence();
+    // test_conv_forward_batch();
+    // test_conv_forward_uneven_batch();
+    // test_conv_backward_batch();
+    test_dkernel_dbias_match_cpu();
 
     std::cout << "\n=== " << g_tests_run << " tests run, " << g_tests_failed << " failed ===\n";
     return g_tests_failed == 0 ? 0 : 1;

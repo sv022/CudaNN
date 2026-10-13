@@ -46,29 +46,92 @@ static NeuralNetwork* build_net(float lr, OptimizerType opt, float dropout_p) {
 }
 
 // ---------------- reference based on host-layer methods ----------------
-void synth_reference_forward(NeuralNetwork* net, float* input) {
-    float* cur = input;
-    for (auto* layer : net->layers) {
-        layer->forward(cur);
+
+static void run_forward(Layer &layer, float *host_in) {
+    size_t in_n = (size_t)layer.batch_size * layer.size;
+    float *d_in = nullptr;
+    cudaMalloc(&d_in, in_n * sizeof(float));
+    cudaMemcpy(d_in, host_in, in_n * sizeof(float), cudaMemcpyHostToDevice);
+    layer.forward(d_in);
+    layer.download_outputs();
+    cudaFree(d_in);
+}
+
+static float* run_backward(Layer &layer, float *host_in, float *host_err, bool raw = false) {
+    size_t in_n  = (size_t)layer.batch_size * layer.size;
+    size_t out_n = (size_t)layer.batch_size * layer.output_size;
+    float *d_in = nullptr, *d_err = nullptr;
+    if (host_in) {
+        cudaMalloc(&d_in, in_n * sizeof(float));
+        cudaMemcpy(d_in, host_in, in_n * sizeof(float), cudaMemcpyHostToDevice);
+    }
+    cudaMalloc(&d_err, out_n * sizeof(float));
+    cudaMemcpy(d_err, host_err, out_n * sizeof(float), cudaMemcpyHostToDevice);
+    float *d_prev = layer.backward(d_in, d_err, raw);
+    float *h = (float*)malloc(in_n * sizeof(float));
+    if (d_prev) cudaMemcpy(h, d_prev, in_n * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(d_in); cudaFree(d_err);
+    return h;
+}
+
+void synth_reference_forward(NeuralNetwork *net, float *input) {
+    float *cur = input;
+    for (auto *layer : net->layers) {
+        size_t n = (size_t)layer->batch_size * layer->output_size;
+        if (dynamic_cast<Activation*>(layer)) {
+            layer->outputs = (float*)realloc(layer->outputs, n * sizeof(float));
+            if (layer->activation_type == ActivationType::Softmax) {
+                for (int b = 0; b < layer->batch_size; ++b) {
+                    const float *z = cur + (size_t)b * layer->size;
+                    float *o = layer->outputs + (size_t)b * layer->size;
+                    float m = z[0];
+                    for (int i = 1; i < layer->size; ++i) m = std::max(m, z[i]);
+                    float s = 0.0f;
+                    for (int i = 0; i < layer->size; ++i) { o[i] = expf(z[i] - m); s += o[i]; }
+                    for (int i = 0; i < layer->size; ++i) o[i] /= s;
+                }
+            } else {
+                for (size_t i = 0; i < n; ++i)
+                    layer->outputs[i] = activation_function(cur[i], layer->activation_type);
+            }
+        } else if (dynamic_cast<Dropout*>(layer)) {
+            layer->outputs = (float*)realloc(layer->outputs, n * sizeof(float));
+            memcpy(layer->outputs, cur, n * sizeof(float));
+        } else {
+            run_forward(*layer, cur);
+        }
         cur = layer->outputs;
     }
 }
 
-void synth_reference_backward(NeuralNetwork* net, float* inputs, float* targets, int bs) {
+void synth_reference_backward(NeuralNetwork *net, float *inputs, float *targets, int bs) {
     int L = (int)net->layers.size();
     size_t n = (size_t)bs * net->output_nodes;
-    float* err = (float*)malloc(n * sizeof(float));
-    const float* out = net->layers.back()->outputs;
+    float *err = (float*)malloc(n * sizeof(float));
+    const float *out = net->layers.back()->outputs;
     for (size_t i = 0; i < n; ++i) err[i] = targets[i] - out[i];
 
-    bool raw =
+    bool raw_last =
         (net->layers.back()->activation_type == ActivationType::Sigmoid && net->loss_function == LossType::BinaryCrossEntropy) ||
         (net->layers.back()->activation_type == ActivationType::Softmax && net->loss_function == LossType::CategoricalCrossEntropy);
 
     for (int i = L - 1; i >= 0; --i) {
-        float* in = (i == 0) ? inputs : net->layers[i - 1]->outputs;
-        float* prev = (i == L - 1) ? net->layers[i]->backward(in, err, raw)
-                                   : net->layers[i]->backward(in, err);
+        Layer *layer = net->layers[i];
+        float *in = (i == 0) ? inputs : net->layers[i - 1]->outputs;
+        size_t m = (size_t)bs * layer->size;
+        float *prev = nullptr;
+        if (dynamic_cast<Activation*>(layer)) {
+            bool raw = (i == L - 1) && raw_last;
+            prev = (float*)malloc(m * sizeof(float));
+            for (size_t k = 0; k < m; ++k)
+                prev[k] = raw ? err[k]
+                              : activation_derivative(err[k], layer->outputs[k], layer->activation_type);
+        } else if (dynamic_cast<Dropout*>(layer)) {
+            prev = (float*)malloc(m * sizeof(float));
+            memcpy(prev, err, m * sizeof(float));
+        } else {
+            prev = run_backward(*layer, in, err);
+        }
         free(err);
         err = prev;
     }

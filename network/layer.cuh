@@ -33,6 +33,12 @@ class Layer
     virtual void save_weights(std::string path) {};
     virtual int load_weights(std::string path, int start) { return 0; };
 
+    void download_outputs() {
+        size_t n = (size_t)batch_size * output_size;
+        outputs = (float*)realloc(outputs, n * sizeof(float));
+        cudaMemcpy(outputs, d_outputs, n * sizeof(float), cudaMemcpyDeviceToHost);
+    }
+
     virtual ~Layer() {}
 
     protected:
