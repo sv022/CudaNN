@@ -3,6 +3,41 @@
 #include <vector>
 #include"../activation/activation.cuh"
 
+__device__ float block_reduce_sum(float v);
+
+__global__ void dense_dweights_kernel(const float* __restrict__ X, const float* __restrict__ E,
+                                      float* __restrict__ dW, int batch, int in, int outn)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y;
+    if (i >= in) return;
+    float s = 0.0f;
+    for (int b = 0; b < batch; ++b) s += X[(size_t)b * in + i] * E[(size_t)b * outn + j];
+    dW[(size_t)i * outn + j] = s;
+}
+
+__global__ void dense_dbias_kernel(const float* __restrict__ E, float* __restrict__ dB, int batch, int outn)
+{
+    int j = blockIdx.x;
+    float s = 0.0f;
+    for (int b = threadIdx.x; b < batch; b += blockDim.x) s += E[(size_t)b * outn + j];
+    s = block_reduce_sum(s);
+    if (threadIdx.x == 0) dB[j] = s;
+}
+
+__global__ void dense_dinput_kernel(const float* __restrict__ E, const float* __restrict__ W,
+                                    float* __restrict__ dX, int batch, int in, int outn)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int b = blockIdx.y;
+    if (i >= in) return;
+    const float* e = E + (size_t)b * outn;
+    const float* w = W + (size_t)i * outn;
+    float s = 0.0f;
+    for (int j = 0; j < outn; ++j) s += e[j] * w[j];
+    dX[(size_t)b * in + i] = s;
+}
+
 
 #ifndef KERNEL_H
 #define KERNEL_H

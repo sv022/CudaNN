@@ -67,111 +67,67 @@ void dense_backward_cpu_batch(float* input_batch, float* weights, float* biases,
     for (int j = 0; j < out_size; ++j) bias_grad_avg[j] = bg_sum[j] / (float)batch_size;
 }
 
-void test_dense_forward_batch_size_1_equivalence() {
-    const int in_size = 5, out_size = 4;
-    Dense dense(in_size, out_size);
-
-    for (int i = 0; i < in_size*out_size; ++i) dense.weights[i] = 0.05f * ((i % 13) - 6);
-    for (int j = 0; j < out_size; ++j) dense.biases[j] = 0.02f * j;
-    dense.sync_weights_to_device();
-
-    float input[in_size];
-    for (int i = 0; i < in_size; ++i) input[i] = 0.1f * ((i*3) % 7) - 0.3f;
-
-    dense.forward(input);
-
-    float expected[out_size];
-    dense_forward_cpu(input, dense.weights, dense.biases, expected, in_size, out_size);
-
-    bool match = true;
-    for (int j = 0; j < out_size; ++j) if (std::fabs(dense.outputs[j] - expected[j]) > 1e-4f) match = false;
-    CHECK(match, "batch_size=1: forward output identical to legacy single-image implementation");
+static float rel_err(const std::vector<float>& a, const std::vector<float>& b) {
+    float w = 0; for (size_t i = 0; i < a.size(); ++i) w = std::max(w, fabsf(a[i]-b[i]) / (1.0f + fabsf(b[i])));
+    return w;
 }
 
-void test_dense_forward_batch() {
-    const int in_size = 5, out_size = 4, batch_size = 6;
-    Dense dense(in_size, out_size);
-    dense.set_batch_size(batch_size);
+static void check_dense_kernels(int B, int IN, int OUT) {
+    std::vector<float> X(B*IN), W(IN*OUT), bias(OUT), E(B*OUT);
+    for (size_t i = 0; i < X.size(); ++i) X[i] = 0.01f * (float)((i*7) % 29) - 0.1f;
+    for (size_t i = 0; i < W.size(); ++i) W[i] = 0.02f * (float)((i*5) % 23) - 0.2f;
+    for (int j = 0; j < OUT; ++j) bias[j] = 0.1f * j - 0.3f;
+    for (size_t i = 0; i < E.size(); ++i) E[i] = 0.03f * (float)((i*3) % 19) - 0.25f;
 
-    for (int i = 0; i < in_size*out_size; ++i) dense.weights[i] = 0.03f * ((i % 11) - 5);
-    for (int j = 0; j < out_size; ++j) dense.biases[j] = 0.04f * j - 0.1f;
-    dense.sync_weights_to_device();
+    std::vector<float> y(B*OUT), dW(IN*OUT, 0), dB(OUT, 0), dX(B*IN, 0);
+    for (int b = 0; b < B; ++b) for (int j = 0; j < OUT; ++j) {
+        float s = bias[j];
+        for (int k = 0; k < IN; ++k) s += X[b*IN+k] * W[k*OUT+j];
+        y[b*OUT+j] = s;
+    }
+    for (int i = 0; i < IN; ++i) for (int j = 0; j < OUT; ++j)
+        for (int b = 0; b < B; ++b) dW[i*OUT+j] += X[b*IN+i] * E[b*OUT+j];
+    for (int j = 0; j < OUT; ++j) for (int b = 0; b < B; ++b) dB[j] += E[b*OUT+j];
+    for (int b = 0; b < B; ++b) for (int i = 0; i < IN; ++i)
+        for (int j = 0; j < OUT; ++j) dX[b*IN+i] += E[b*OUT+j] * W[i*OUT+j];
 
-    std::vector<float> input_batch(batch_size * in_size);
-    for (int b = 0; b < batch_size; ++b)
-        for (int i = 0; i < in_size; ++i)
-            input_batch[b*in_size+i] = 0.07f * ((i*(b+1) + b*5) % 17) - 0.5f;
+    float *dx_, *dw_, *db_, *de_, *dy_, *dgw, *dgb, *dgx;
+    cudaMalloc(&dx_, X.size()*4); cudaMalloc(&dw_, W.size()*4); cudaMalloc(&db_, bias.size()*4);
+    cudaMalloc(&de_, E.size()*4); cudaMalloc(&dy_, y.size()*4);
+    cudaMalloc(&dgw, dW.size()*4); cudaMalloc(&dgb, dB.size()*4); cudaMalloc(&dgx, dX.size()*4);
+    cudaMemcpy(dx_, X.data(), X.size()*4, cudaMemcpyHostToDevice);
+    cudaMemcpy(dw_, W.data(), W.size()*4, cudaMemcpyHostToDevice);
+    cudaMemcpy(db_, bias.data(), bias.size()*4, cudaMemcpyHostToDevice);
+    cudaMemcpy(de_, E.data(), E.size()*4, cudaMemcpyHostToDevice);
 
-    dense.forward(input_batch.data());
+    std::string tag = "B=" + std::to_string(B) + " IN=" + std::to_string(IN) + " OUT=" + std::to_string(OUT);
+    std::vector<float> got(y.size());
 
-    std::vector<float> expected(batch_size * out_size);
-    dense_forward_cpu_batch(input_batch.data(), dense.weights, dense.biases, expected.data(), batch_size, in_size, out_size);
+    dim3 THREADS(32, 32), grid((OUT+31)/32, (B+31)/32);
+    Kernel::dot_bias<<<grid, THREADS>>>(dx_, dw_, db_, dy_, B, IN, OUT);
+    cudaMemcpy(got.data(), dy_, got.size()*4, cudaMemcpyDeviceToHost);
+    CHECK(rel_err(got, y) < 1e-4f, "Kernel::dot_bias (" + tag + ")");
 
-    bool match = true;
-    for (size_t i = 0; i < expected.size(); ++i)
-        if (std::fabs(dense.outputs[i] - expected[i]) > 1e-4f) match = false;
-    CHECK(match, "batch forward: GPU output matches CPU reference for all 6 images");
-}
+    dense_dweights_kernel<<<dim3((IN+127)/128, OUT), 128>>>(dx_, de_, dgw, B, IN, OUT);
+    dense_dbias_kernel<<<OUT, 256>>>(de_, dgb, B, OUT);
+    dense_dinput_kernel<<<dim3((IN+127)/128, B), 128>>>(de_, dw_, dgx, B, IN, OUT);
+    std::vector<float> gw(dW.size()), gb(dB.size()), gx(dX.size());
+    cudaMemcpy(gw.data(), dgw, gw.size()*4, cudaMemcpyDeviceToHost);
+    cudaMemcpy(gb.data(), dgb, gb.size()*4, cudaMemcpyDeviceToHost);
+    cudaMemcpy(gx.data(), dgx, gx.size()*4, cudaMemcpyDeviceToHost);
+    CHECK(rel_err(gw, dW) < 1e-4f, "dense_dweights_kernel (" + tag + ")");
+    CHECK(rel_err(gb, dB) < 1e-4f, "dense_dbias_kernel (" + tag + ")");
+    CHECK(rel_err(gx, dX) < 1e-4f, "dense_dinput_kernel (" + tag + ")");
 
-void test_dense_backward_batch() {
-    const int in_size = 5, out_size = 4, batch_size = 6;
-    Dense dense(in_size, out_size);
-    dense.set_batch_size(batch_size);
-
-    for (int i = 0; i < in_size*out_size; ++i) dense.weights[i] = 0.03f * ((i % 11) - 5);
-    for (int j = 0; j < out_size; ++j) dense.biases[j] = 0.04f * j - 0.1f;
-    dense.sync_weights_to_device();
-
-    std::vector<float> weights_before(dense.weights, dense.weights + in_size*out_size);
-    std::vector<float> biases_before(dense.biases, dense.biases + out_size);
-
-    std::vector<float> input_batch(batch_size * in_size);
-    for (int b = 0; b < batch_size; ++b)
-        for (int i = 0; i < in_size; ++i)
-            input_batch[b*in_size+i] = 0.07f * ((i*(b+1) + b*5) % 17) - 0.5f;
-
-    dense.forward(input_batch.data());
-    std::vector<float> outputs_snapshot(dense.outputs, dense.outputs + batch_size*out_size);
-
-    std::vector<float> next_errors_batch(batch_size * out_size);
-    for (size_t i = 0; i < next_errors_batch.size(); ++i) next_errors_batch[i] = 0.3f + 0.05f * (i % 7);
-
-    std::vector<float> dInputs_cpu(batch_size * in_size);
-    std::vector<float> wg_avg_cpu(in_size*out_size);
-    std::vector<float> bg_avg_cpu(out_size);
-
-    dense_backward_cpu_batch(input_batch.data(), weights_before.data(), biases_before.data(),
-                              outputs_snapshot.data(), next_errors_batch.data(),
-                              dInputs_cpu.data(), wg_avg_cpu.data(), bg_avg_cpu.data(),
-                              batch_size, in_size, out_size);
-
-    float lr = 0.01;
-    std::vector<float> weights_expected(in_size*out_size), biases_expected(out_size);
-    for (int i = 0; i < in_size*out_size; ++i) weights_expected[i] = weights_before[i] + lr * wg_avg_cpu[i];
-    for (int j = 0; j < out_size; ++j) biases_expected[j] = biases_before[j] + lr * bg_avg_cpu[j];
-
-    float* prev_errors = dense.backward(input_batch.data(), next_errors_batch.data());
-
-    bool weights_match = true;
-    for (int i = 0; i < in_size*out_size; ++i) if (std::fabs(dense.weights[i] - weights_expected[i]) > 1e-4f) weights_match = false;
-    CHECK(weights_match, "batch backward: updated weights match one averaged SGD step over the batch");
-
-    bool biases_match = true;
-    for (int j = 0; j < out_size; ++j) if (std::fabs(dense.biases[j] - biases_expected[j]) > 1e-4f) biases_match = false;
-    CHECK(biases_match, "batch backward: updated biases match one averaged SGD step over the batch");
-
-    bool dinputs_match = true;
-    for (int i = 0; i < batch_size*in_size; ++i) if (std::fabs(prev_errors[i] - dInputs_cpu[i]) > 1e-4f) dinputs_match = false;
-    CHECK(dinputs_match, "batch backward: dInputs are per-image (not reduced), match CPU reference for all 6 images");
-
-    free(prev_errors);
+    cudaFree(dx_); cudaFree(dw_); cudaFree(db_); cudaFree(de_); cudaFree(dy_);
+    cudaFree(dgw); cudaFree(dgb); cudaFree(dgx);
 }
 
 int main() {
     std::cout << "=== Dense batch tests ===\n\n";
-    test_dense_forward_batch_size_1_equivalence();
-    test_dense_forward_batch();
-    test_dense_backward_batch();
+    check_dense_kernels(7, 37, 10);
+    check_dense_kernels(5, 20, 100);
+    check_dense_kernels(1, 13, 3);
     std::cout << "\n=== " << g_tests_run << " tests run, " << g_tests_failed << " failed ===\n";
     return g_tests_failed == 0 ? 0 : 1;
 }

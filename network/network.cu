@@ -32,12 +32,20 @@ private:
     int input_nodes;
     int output_nodes;
 
+    float *d_input = nullptr;
+    float *d_output_errors  = nullptr;
+    float *h_output_errors  = nullptr;
+
+    size_t d_input_cap = 0, d_err_cap = 0;
+
+
     float calculateLoss(const float* target_batch, int current_batch_size);
     int getMaxActivationIndex(float *target);
 
     public:
     NeuralNetwork(float lr, LossType loss = LossType::MSE, OptimizerType opt = OptimizerType::SGD);
     NeuralNetwork(const NetworkStructure* structure);
+    ~NeuralNetwork() { cudaFree(d_input); cudaFree(d_output_errors); free(h_output_errors); }
     void add_layer(Layer* Layer);
     void set_learning_rate(float lr);
     void set_batch_size(int bs);
@@ -54,11 +62,13 @@ private:
     void save_weights(std::string path);
     void load_weights(std::string path);
 
-    friend void test_multichannel_softmax_full_pipeline();
-    friend void test_softmax_cce_training_reduces_loss();
-    friend void test_softmax_output_sums_to_one_after_training();
-    friend void test_is_training_switches_behavior();
-    friend void test_repeated_train_after_test_reenables_training_mode();
+    friend void synth_reference_forward(NeuralNetwork*, float*);
+    friend void synth_reference_backward(NeuralNetwork*, float*, float*, int);
+    friend void test_synth_forward_chain_equivalence();
+    friend void synth_one_step_equivalence(OptimizerType, float);
+    friend void test_synth_batch_independence();
+    friend void test_synth_dropout_modes();
+    friend void test_synth_transitions();
 };
 
 NeuralNetwork::NeuralNetwork(float lr, LossType loss, OptimizerType opt) {
@@ -158,6 +168,7 @@ void NeuralNetwork::add_layer(Layer* layer){
         layers.push_back(layer);
         input_nodes = layer->size;
         output_nodes = layer->output_size;
+        layer->compute_input_grad = false;
         return;
     }
     if (layer->size != layers.back()->output_size) {
@@ -197,60 +208,41 @@ float NeuralNetwork::calculateLoss(const float* target_batch, int current_batch_
     return loss;
 }
 
-void NeuralNetwork::forward(float *inputs, int current_batch_size){
-    float *layer_inputs;
-    size_t first_layer_total = (size_t)current_batch_size * layers[0]->size;
-
-    layer_inputs = (float*)malloc(sizeof(float) * first_layer_total);
-    for (size_t i = 0; i < first_layer_total; i++) layer_inputs[i] = inputs[i];
-
+void NeuralNetwork::forward(float *inputs, int current_batch_size) {
+    size_t n = (size_t)current_batch_size * input_nodes;
+    ensure_device(&d_input, &d_input_cap, n);
+    cudaMemcpy(d_input, inputs, n * sizeof(float), cudaMemcpyHostToDevice);
+    float *d_in = d_input;
     for (auto &layer : layers) {
-        layer->forward(layer_inputs);
-        free(layer_inputs);
-
-        size_t layer_total_output = (size_t)current_batch_size * layer->output_size;
-        layer_inputs = (float*)malloc(sizeof(float) * layer_total_output);
-        for (size_t i = 0; i < layer_total_output; i++) layer_inputs[i] = layer->outputs[i];
+        layer->forward(d_in);
+        d_in = layer->d_outputs;
     }
-
-    free(layer_inputs);
+    Layer *last = layers.back();
+    cudaMemcpy(last->outputs, last->d_outputs, (size_t)current_batch_size * output_nodes * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
-
-void NeuralNetwork::backward(float *inputs, float *targets, int current_batch_size){
+void NeuralNetwork::backward(float * /*inputs*/, float *targets, int current_batch_size) {
     int num_layers = layers.size();
+    size_t n_err = (size_t)current_batch_size * output_nodes;
 
-    float *output = layers.back()->outputs;
-
-    size_t total_output_errors = (size_t)current_batch_size * output_nodes;
-    float *output_errors = (float*)malloc(sizeof(float) * total_output_errors);
-    for (size_t i = 0; i < total_output_errors; ++i) {
-        output_errors[i] = targets[i] - output[i];
-    }
+    h_output_errors = (float*)realloc(h_output_errors, n_err * sizeof(float));
+    const float *output = layers.back()->outputs;
+    for (size_t i = 0; i < n_err; ++i) h_output_errors[i] = targets[i] - output[i];
+    ensure_device(&d_output_errors, &d_err_cap, n_err);            // <- добавить
+    cudaMemcpy(d_output_errors, h_output_errors, n_err * sizeof(float), cudaMemcpyHostToDevice);
 
     bool raw_gradient_for_last_layer =
         (layers.back()->activation_type == ActivationType::Sigmoid && loss_function == LossType::BinaryCrossEntropy) ||
         (layers.back()->activation_type == ActivationType::Softmax && loss_function == LossType::CategoricalCrossEntropy);
 
-    float *current_errors = output_errors;
-
+    float *d_err = d_output_errors;
     for (int i = num_layers - 1; i >= 0; --i) {
-        float *layer_input = (i == 0) ? inputs : layers[i - 1]->outputs;
-
-        float *prev_errors = (i == num_layers - 1)
-            ? layers[i]->backward(layer_input, current_errors, raw_gradient_for_last_layer)
-            : layers[i]->backward(layer_input, current_errors);
-
-        if (i != num_layers - 1) {
-            free(current_errors);
-        }
-        current_errors = prev_errors;
+        float *d_layer_in = (i == 0) ? d_input : layers[i - 1]->d_outputs;
+        d_err = (i == num_layers - 1)
+              ? layers[i]->backward(d_layer_in, d_err, raw_gradient_for_last_layer)
+              : layers[i]->backward(d_layer_in, d_err);
     }
-
     optimizer->step();
-
-    free(current_errors);
-    free(output_errors);
 }
 
 
