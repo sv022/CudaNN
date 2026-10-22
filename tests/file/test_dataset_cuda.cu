@@ -1,32 +1,27 @@
-#include"../../network/utils/file.h"
+#include "../../network/utils/file.h"
 #include <cuda_runtime.h>
-#include <iostream>
-#include <cassert>
 #include <cmath>
-#include <vector>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <map>
+#include <memory>
 #include <set>
+#include <sstream>
+#include <string>
+#include <vector>
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 
-#define CUDA_CHECK(call) do { \
-    cudaError_t err = (call); \
-    if (err != cudaSuccess) { \
-        std::cerr << "CUDA error at " << __FILE__ << ":" << __LINE__ \
-                   << " -> " << cudaGetErrorString(err) << std::endl; \
-        exit(1); \
-    } \
-} while (0)
-
-__global__ void batch_scale_kernel(const float* input_batch, float* output_batch,
-                                    int input_nodes, int batch_size_actual)
-{
-    int b = blockIdx.x; 
-    int p = threadIdx.x;
-
-    if (b >= batch_size_actual || p >= input_nodes) return;
-
-    int idx = b * input_nodes + p;
-    float scale = (float)(b + 1);
-    output_batch[idx] = input_batch[idx] * scale;
-}
+static const int IMG_C = 1, IMG_H = 12, IMG_W = 12;
+static const int INPUT_NODES = IMG_C * IMG_H * IMG_W;
+static const int N_CLASSES = 4;
+static const int TRAIN_N = 200, TEST_N = 80;
+std::string TRAIN_CSV = "data/synthetic_train.csv";
+std::string TEST_CSV  = "data/synthetic_test.csv";
 
 static int tests_run = 0;
 static int tests_failed = 0;
@@ -34,91 +29,634 @@ static int tests_failed = 0;
 #define CHECK(cond, msg) do { \
     tests_run++; \
     if (!(cond)) { \
-        std::cerr << "[FAIL] " << msg << " (line " << __LINE__ << ")\n"; \
+        std::cerr << "[FAIL] " << (msg) << " (line " << __LINE__ << ")\n"; \
         tests_failed++; \
     } else { \
-        std::cout << "[ OK ] " << msg << "\n"; \
+        std::cout << "[ OK ] " << (msg) << "\n"; \
     } \
 } while(0)
 
-int main()
+#define CHECK_EQ(a, b, msg) do { \
+    tests_run++; \
+    auto _a = (a); \
+    auto _b = (b); \
+    if (!(_a == _b)) { \
+        std::cerr << "[FAIL] " << (msg) << ": got " << _a << ", expected " << _b \
+                  << " (line " << __LINE__ << ")\n"; \
+        tests_failed++; \
+    } else { \
+        std::cout << "[ OK ] " << (msg) << "\n"; \
+    } \
+} while(0)
+
+#define CHECK_THROWS(expr, ExcT, substr, msg) do { \
+    bool _ok = false; \
+    std::string _what = "no exception"; \
+    try { expr; } \
+    catch (const ExcT& e) { _what = e.what(); _ok = (_what.find(substr) != std::string::npos); } \
+    catch (...) { _what = "wrong exception type"; } \
+    CHECK(_ok, std::string(msg) + " [" + _what + "]"); \
+} while(0)
+
+using Rows = std::vector<std::vector<float>>;
+
+struct Ref {
+    std::vector<int> label;
+    std::vector<std::vector<float>> feat;
+};
+
+struct Snap {
+    std::vector<float> img, tgt;
+    int n = 0;
+    bool operator==(const Snap& o) const { return n == o.n && img == o.img && tgt == o.tgt; }
+    bool operator!=(const Snap& o) const { return !(*this == o); }
+};
+
+static std::vector<std::string> tmp_files;
+static std::string exe_path;
+
+static Ref load_ref(const std::string& path, int in, int out)
 {
-    const int size = 37;
-    const int input_nodes = 8;
-    const int output_nodes = 4;
-    const int batch_size = 8;
+    Ref r;
+    std::ifstream f(path);
+    std::string line;
+    if (!std::getline(f, line)) return r;
 
-    DatasetFile ds("data/synthetic_dataset.csv", size, input_nodes, output_nodes, batch_size);
+    while (std::getline(f, line)) {
+        std::vector<std::string> tok;
+        std::string t;
+        std::istringstream ss(line);
+        while (std::getline(ss, t, ',')) tok.push_back(t);
+        if ((int)tok.size() != in + 1) continue;
 
-    CHECK(ds.get_num_batches() == 5, "num_batches == ceil(37/8) == 5");
+        int lab = std::atoi(tok[0].c_str());
+        if (lab < 0 || lab >= out) continue;
 
-    float *d_input, *d_output;
-    CUDA_CHECK(cudaMalloc(&d_input, (size_t)batch_size * input_nodes * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_output, (size_t)batch_size * input_nodes * sizeof(float)));
+        std::vector<float> v(in);
+        for (int i = 0; i < in; i++) v[i] = std::strtof(tok[i + 1].c_str(), nullptr);
+        r.label.push_back(lab);
+        r.feat.push_back(v);
+    }
+    return r;
+}
 
-    std::vector<float> h_output(batch_size * input_nodes);
+static Snap snap(const DatasetFile& d, int in = INPUT_NODES, int out = N_CLASSES)
+{
+    Snap s;
+    s.n = d.current_batch_size;
+    if (s.n > 0) {
+        s.img.assign(d.image_batch, d.image_batch + (size_t)s.n * in);
+        s.tgt.assign(d.target_batch, d.target_batch + (size_t)s.n * out);
+    }
+    return s;
+}
 
-    std::set<int> all_seen_indices;
-    int total_batches = ds.get_num_batches();
+static std::vector<float> sample_row(const DatasetFile& d, int j, int in = INPUT_NODES, int out = N_CLASSES)
+{
+    std::vector<float> r(d.image_batch + (size_t)j * in, d.image_batch + (size_t)(j + 1) * in);
+    r.insert(r.end(), d.target_batch + (size_t)j * out, d.target_batch + (size_t)(j + 1) * out);
+    return r;
+}
 
-    for (int bi = 0; bi < total_batches; bi++) {
-        if (bi > 0) ds.next_batch();
+static std::vector<float> ref_row(const Ref& r, int i, int out = N_CLASSES)
+{
+    std::vector<float> v = r.feat[i];
+    std::vector<float> t(out, 0.f);
+    t[r.label[i]] = 1.f;
+    v.insert(v.end(), t.begin(), t.end());
+    return v;
+}
 
-        int cur_bs = ds.current_batch_size;
+static std::unique_ptr<DatasetFile> make(int bs, float vf = 0.f, unsigned seed = 12345u,
+                                         const std::string& path = TRAIN_CSV, int n = TRAIN_N)
+{
+    return std::unique_ptr<DatasetFile>(new DatasetFile(path, n, INPUT_NODES, N_CLASSES, bs, vf, seed));
+}
 
-        CUDA_CHECK(cudaMemcpy(d_input, ds.image_batch, (size_t)cur_bs * input_nodes * sizeof(float), cudaMemcpyHostToDevice));
+static std::unique_ptr<DatasetFile> make_small(const std::string& path, int size, int bs)
+{
+    return std::unique_ptr<DatasetFile>(new DatasetFile(path, size, 3, 4, bs));
+}
 
-        batch_scale_kernel<<<cur_bs, input_nodes>>>(d_input, d_output, input_nodes, cur_bs);
-        CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
+static Rows epoch_rows(DatasetFile& d)
+{
+    Rows rows;
+    for (int b = 0; b < d.get_num_batches(); b++) {
+        d.get_batch(b);
+        for (int j = 0; j < d.current_batch_size; j++) rows.push_back(sample_row(d, j));
+    }
+    return rows;
+}
 
-        CUDA_CHECK(cudaMemcpy(h_output.data(), d_output, (size_t)cur_bs * input_nodes * sizeof(float), cudaMemcpyDeviceToHost));
+static std::string write_tmp(const std::string& name, const std::string& content)
+{
+    std::string p = "_tmp_" + name + ".csv";
+    std::ofstream f(p, std::ios::binary);
+    f << content;
+    tmp_files.push_back(p);
+    return p;
+}
 
-        if (bi < total_batches - 1) {
-            CHECK(cur_bs == batch_size, ("batch " + std::to_string(bi) + " has full size " + std::to_string(batch_size)).c_str());
-        } else {
-            CHECK(cur_bs == (size % batch_size), ("last batch " + std::to_string(bi) + " has partial size " + std::to_string(size % batch_size)).c_str());
+static std::string capture_cerr(const std::function<void()>& fn)
+{
+    std::ostringstream ss;
+    std::streambuf* old = std::cerr.rdbuf(ss.rdbuf());
+    try { fn(); } catch (...) { std::cerr.rdbuf(old); throw; }
+    std::cerr.rdbuf(old);
+    return ss.str();
+}
+
+static int count_substr(const std::string& s, const std::string& sub)
+{
+    int n = 0;
+    for (size_t p = s.find(sub); p != std::string::npos; p = s.find(sub, p + 1)) ++n;
+    return n;
+}
+
+static bool has(const std::string& s, const std::string& sub)
+{
+    return s.find(sub) != std::string::npos;
+}
+
+// ---------------- isolated cases (may crash) ----------------
+
+static std::map<std::string, std::function<int()>>& isolated_cases()
+{
+    static std::map<std::string, std::function<int()>> m;
+    return m;
+}
+
+static void register_isolated_cases()
+{
+    isolated_cases()["next_batch_uninit_num_batches"] = [] {
+        auto d = make(32);
+        d->next_batch();
+        return (d->current_batch == 1 && d->current_batch_size == 32) ? 0 : 3;
+    };
+    isolated_cases()["get_batch_negative_index"] = [] {
+        auto d = make(32);
+        d->get_batch(-1);
+        return 0;
+    };
+    isolated_cases()["batch_size_zero"] = [] {
+        auto d = make(0);
+        return 0;
+    };
+}
+
+static int run_isolated(const std::string& name)
+{
+#ifdef _WIN32
+    std::string cmd = "\"" + exe_path + "\" --case " + name + " > NUL 2>&1";
+#else
+    std::string cmd = "\"" + exe_path + "\" --case " + name + " > /dev/null 2>&1";
+#endif
+    int rc = std::system(cmd.c_str());
+#ifndef _WIN32
+    if (WIFEXITED(rc)) return WEXITSTATUS(rc);
+    if (WIFSIGNALED(rc)) return 128 + WTERMSIG(rc);
+#endif
+    return rc;
+}
+
+static std::string describe_exit(int code)
+{
+    if (code == 0) return "completed normally, result as intended";
+    if (code == 3) return "completed, but result is WRONG (silent corruption)";
+    if (code == 2) return "terminated with C++ exception";
+    return "CRASHED / abnormal termination (code " + std::to_string(code) + ")";
+}
+
+// ---------------- test groups ----------------
+
+static void test_split_and_parse_val_fraction()
+{
+    std::cout << "\n--- split / parse_val_fraction ---\n";
+
+    CHECK((split("a,b,c", ',') == std::vector<std::string>{"a", "b", "c"}), "split: basic tokens");
+    CHECK((split("a,,b,", ',') == std::vector<std::string>{"a", "b"}), "split: empty tokens are dropped");
+    CHECK(split("", ',').empty(), "split: empty string gives empty result");
+    CHECK(split(",,,", ',').empty(), "split: only separators gives empty result");
+
+    auto a = parse_val_fraction("100/0.2");
+    CHECK(a.first == 100 && a.second == 0.2f, "parse_val_fraction: \"100/0.2\" -> {100, 0.2}");
+    auto b = parse_val_fraction("100");
+    CHECK(b.first == 100 && b.second == 0.0f, "parse_val_fraction: \"100\" -> {100, 0}");
+    auto c = parse_val_fraction("");
+    CHECK(c.first == 0 && c.second == 0.0f, "parse_val_fraction: empty string -> {0, 0}");
+
+    CHECK_THROWS(parse_val_fraction("5/1"), std::out_of_range, "greater than 1",
+                 "parse_val_fraction: fraction == 1 throws out_of_range");
+    CHECK_THROWS(parse_val_fraction("5/-0.1"), std::out_of_range, "smaller than 0",
+                 "parse_val_fraction: negative fraction throws out_of_range");
+    CHECK_THROWS(parse_val_fraction("abc"), std::invalid_argument, "",
+                 "parse_val_fraction: non-numeric input throws invalid_argument");
+}
+
+static void test_constructor_and_getters()
+{
+    std::cout << "\n--- constructor / getters ---\n";
+
+    auto d = make(32);
+    CHECK_EQ(d->get_train_size(), 200, "no split: train_size == 200");
+    CHECK_EQ(d->get_val_size(), 0, "no split: val_size == 0");
+    CHECK_EQ(d->get_train_num_batches(), 7, "no split: train_num_batches == ceil(200/32) == 7");
+    CHECK_EQ(d->get_val_num_batches(), 0, "no split: val_num_batches == 0");
+    CHECK_EQ(d->get_num_batches(), 7, "no split: get_num_batches() == 7");
+    CHECK(!d->has_val(), "no split: has_val() == false");
+    CHECK_EQ(d->get_batch_size(), 32, "get_batch_size() == 32");
+    CHECK_EQ(d->get_input_nodes(), INPUT_NODES, "get_input_nodes() == 144");
+    CHECK_EQ(d->get_output_nodes(), N_CLASSES, "get_output_nodes() == 4");
+    CHECK_EQ(d->current_batch_size, 32, "constructor loads batch 0 (reset)");
+
+    auto v = make(32, 0.2f);
+    CHECK_EQ(v->get_val_size(), (int)(TRAIN_N * 0.2f), "split 0.2: val_size == (int)(size * 0.2)");
+    CHECK_EQ(v->get_train_size(), TRAIN_N - v->get_val_size(), "split 0.2: train_size == size - val_size");
+    CHECK(v->has_val(), "split 0.2: has_val() == true");
+    CHECK_EQ(v->get_train_num_batches(), (v->get_train_size() + 31) / 32, "split 0.2: train_num_batches");
+    CHECK_EQ(v->get_val_num_batches(), (v->get_val_size() + 31) / 32, "split 0.2: val_num_batches");
+    CHECK_EQ(v->get_num_batches(), v->get_train_num_batches(), "split 0.2: initial mode is train");
+
+    float vf = 0.333f;
+    auto t = make(32, vf);
+    CHECK_EQ(t->get_val_size(), static_cast<int>(TRAIN_N * vf), "val_size uses int truncation");
+
+    auto e = make(32, 1.0f);
+    CHECK(e->get_train_size() == 0 && e->get_val_size() == TRAIN_N,
+          "PIN: val_fraction == 1.0 is not rejected (train_size 0, val_size 200)");
+    CHECK(e->get_train_num_batches() == 0 && e->get_val_num_batches() == 7,
+          "PIN: val_fraction == 1.0 gives 0 train batches and 7 val batches");
+
+    auto n = make(32, -0.5f);
+    CHECK(n->get_val_size() == 0 && n->get_train_size() == TRAIN_N && !n->has_val(),
+          "negative val_fraction behaves as 0");
+
+    auto ts = make(16, 0.f, 12345u, TEST_CSV, TEST_N);
+    Ref r = load_ref(TEST_CSV, INPUT_NODES, N_CLASSES);
+    CHECK_EQ((int)r.label.size(), TEST_N, "reference parser finds 80 valid rows in test csv");
+    CHECK(ts->get_train_size() == 80 && ts->get_train_num_batches() == 5, "test csv: size 80, 5 batches of 16");
+    bool ok = true;
+    for (int j = 0; j < 16; j++) ok = ok && (sample_row(*ts, j) == ref_row(r, j));
+    CHECK(ok, "test csv: first batch matches reference rows");
+}
+
+static void test_constructor_errors()
+{
+    std::cout << "\n--- constructor errors ---\n";
+
+    CHECK_THROWS(make(32, 0.f, 1u, "data/file.txt"), std::runtime_error, "Unsupported file format",
+                 "unsupported extension .txt throws runtime_error");
+    CHECK_THROWS(make(32, 0.f, 1u, "data/file.CSV"), std::runtime_error, "Unsupported file format",
+                 "extension check is case-sensitive (.CSV rejected)");
+    CHECK_THROWS(make(32, 0.f, 1u, "noextension"), std::runtime_error, "Unsupported file format",
+                 "path without extension throws runtime_error");
+
+    std::string err = capture_cerr([] {
+        try { make(32, 0.f, 1u, "data/does_not_exist.csv"); } catch (const std::runtime_error&) {}
+    });
+    CHECK(has(err, "Could not open file"), "missing file: message written to cerr");
+    CHECK_THROWS(make(32, 0.f, 1u, "data/does_not_exist.csv"), std::runtime_error, "Error opening file.",
+                 "missing file throws runtime_error \"Error opening file.\"");
+
+    CHECK_THROWS(make(32, 0.f, 1u, TRAIN_CSV, TRAIN_N + 1), std::runtime_error,
+                "contains 200 valid rows, expected 201",
+                "size larger than the train csv row count throws runtime_error");
+
+    std::string empty = write_tmp("empty", "");
+    CHECK_THROWS(make_small(empty, 3, 2), std::runtime_error, "CSV file is empty",
+                 "empty file throws runtime_error \"CSV file is empty\"");
+
+    std::string hdr0 = write_tmp("hdr_only0", "h\n");
+    try {
+        auto d = make_small(hdr0, 0, 2);
+        std::cout << "[INFO] size=0: constructed, train_num_batches=" << d->get_train_num_batches() << "\n";
+    } catch (const std::exception& e) {
+        std::cout << "[INFO] size=0: threw: " << e.what() << "\n";
+    }
+}
+
+static void test_batches_content()
+{
+    std::cout << "\n--- batches: content and order ---\n";
+
+    Ref r = load_ref(TRAIN_CSV, INPUT_NODES, N_CLASSES);
+    CHECK_EQ((int)r.label.size(), TRAIN_N, "reference parser finds 200 valid rows in train csv");
+
+    auto d = make(32);
+    bool order_ok = true;
+    for (int b = 0; b < d->get_num_batches(); b++) {
+        d->get_batch(b);
+        for (int j = 0; j < d->current_batch_size; j++)
+            order_ok = order_ok && (sample_row(*d, j) == ref_row(r, b * 32 + j));
+    }
+    CHECK(order_ok, "without shuffle, batches follow file order and match reference rows");
+
+    bool one_hot_ok = true;
+    for (auto& row : epoch_rows(*d)) {
+        float sum = 0.f;
+        int ones = 0;
+        for (int i = 0; i < N_CLASSES; i++) {
+            float t = row[INPUT_NODES + i];
+            sum += t;
+            ones += (t == 1.f);
         }
+        one_hot_ok = one_hot_ok && (sum == 1.0f) && (ones == 1);
+    }
+    CHECK(one_hot_ok, "all targets are one-hot");
 
-        bool batch_values_ok = true;
-        for (int b = 0; b < cur_bs; b++) {
-            float first_feature = ds.image_batch[b * input_nodes + 0];
-            int orig_idx = (int)std::round(first_feature / 100.0f);
-            all_seen_indices.insert(orig_idx);
+    d->get_batch(6);
+    CHECK(d->current_batch_size == 8 && d->current_batch == 6, "last batch is partial (8 of 32)");
+    d->get_batch(5);
+    CHECK_EQ(d->current_batch_size, 32, "batch 5 has full size");
 
-            for (int p = 0; p < input_nodes; p++) {
-                float expected_input = orig_idx * 100.0f + p * 0.5f;
-                float actual_input = ds.image_batch[b * input_nodes + p];
-                if (std::fabs(expected_input - actual_input) > 1e-3) batch_values_ok = false;
+    Snap s0 = snap(*d);
+    d->get_batch(0);
+    s0 = snap(*d);
+    d->get_batch(3);
+    d->reset();
+    CHECK(d->current_batch == 0 && snap(*d) == s0, "reset() returns to batch 0 with identical data");
 
-                float expected_output = actual_input * (float)(b + 1);
-                float actual_output = h_output[b * input_nodes + p];
-                if (std::fabs(expected_output - actual_output) > 1e-3) batch_values_ok = false;
-            }
-        }
-        CHECK(batch_values_ok, ("batch " + std::to_string(bi) + ": GPU kernel output matches expected scale per image-in-batch").c_str());
+    d->get_batch(7);
+    CHECK_EQ(d->current_batch_size, 200 - 7 * 32, "PIN: get_batch(7) past the end gives negative size (-24)");
+    CHECK_EQ(d->current_batch, 7, "PIN: get_batch(7) stores out-of-range current_batch");
+    d->get_batch(100);
+    CHECK(d->current_batch_size < 0, "PIN: get_batch(100) gives negative size");
+    d->reset();
+
+    Rows rows = epoch_rows(*d);
+    std::multiset<std::vector<float>> got(rows.begin(), rows.end()), expected;
+    for (int i = 0; i < TRAIN_N; i++) expected.insert(ref_row(r, i));
+    CHECK_EQ((int)rows.size(), TRAIN_N, "full epoch yields 200 samples");
+    CHECK(got == expected, "full epoch covers every reference sample exactly once");
+
+    std::string three = write_tmp("three", "h\n0,1,2,3\n1,4,5,6\n2,7,8,9\n");
+    auto small = make_small(three, 3, 8);
+    CHECK(small->get_train_num_batches() == 1 && small->current_batch_size == 3,
+          "batch_size > dataset size: 1 batch with 3 samples");
+}
+
+static void test_shuffle_and_seed()
+{
+    std::cout << "\n--- shuffle / seed ---\n";
+
+    auto d = make(32);
+    Rows before = epoch_rows(*d);
+    d->shuffle();
+    CHECK_EQ(d->current_batch, 0, "shuffle() resets current_batch to 0");
+    Rows after = epoch_rows(*d);
+    CHECK(std::multiset<std::vector<float>>(after.begin(), after.end()) ==
+          std::multiset<std::vector<float>>(before.begin(), before.end()),
+          "shuffle() keeps the same set of samples");
+    CHECK(after != before, "shuffle() changes the order");
+
+    auto a = make(32, 0.f, 777u);
+    auto b = make(32, 0.f, 777u);
+    a->shuffle(); b->shuffle();
+    bool first = (epoch_rows(*a) == epoch_rows(*b));
+    a->shuffle(); b->shuffle();
+    bool second = (epoch_rows(*a) == epoch_rows(*b));
+    CHECK(first && second, "same seed gives identical order across consecutive shuffles");
+
+    auto s1 = make(32, 0.f, 1u);
+    auto s2 = make(32, 0.f, 2u);
+    s1->shuffle(); s2->shuffle();
+    CHECK(epoch_rows(*s1) != epoch_rows(*s2), "different seeds give different order");
+
+    auto n1 = make(32, 0.f, 1u);
+    auto n2 = make(32, 0.f, 999u);
+    CHECK(snap(*n1) == snap(*n2), "val_fraction == 0: constructor does not shuffle (seed has no effect)");
+
+    auto v1 = make(32, 0.2f, 1u);
+    auto v2 = make(32, 0.2f, 2u);
+    auto v3 = make(32, 0.2f, 1u);
+    CHECK(snap(*v1) != snap(*v2), "val_fraction > 0: different seed gives different split");
+    CHECK(snap(*v1) == snap(*v3), "val_fraction > 0: same seed gives same split");
+
+    Ref r = load_ref(TRAIN_CSV, INPUT_NODES, N_CLASSES);
+    bool in_file_order = true;
+    for (int j = 0; j < 32; j++) in_file_order = in_file_order && (sample_row(*v1, j) == ref_row(r, j));
+    CHECK(!in_file_order, "val_fraction > 0: constructor shuffles indices");
+}
+
+static void test_train_val_modes()
+{
+    std::cout << "\n--- train / val modes ---\n";
+
+    auto plain = make(32);
+    CHECK_THROWS(plain->use_val(), std::runtime_error, "constructed without a validation split",
+        "use_val() without split throws runtime_error");
+    CHECK_EQ(plain->get_num_batches(), 7, "failed use_val() keeps train mode");
+
+    auto d = make(32, 0.2f);
+    Snap train0 = snap(*d);
+    CHECK_EQ(d->get_train_size(), 160, "split 0.2: train_size == 160");
+    CHECK_EQ(d->get_val_size(), 40, "split 0.2: val_size == 40");
+
+    d->use_val();
+    CHECK(d->get_num_batches() == d->get_val_num_batches() && d->current_batch == 0,
+        "use_val() switches num_batches to val and resets");
+    CHECK(snap(*d) != train0, "val batch 0 differs from train batch 0");
+    CHECK_EQ(d->current_batch_size, 32, "val batch 0 has size 32");
+    d->get_batch(1);
+    CHECK_EQ(d->current_batch_size, 8, "val batch 1 has size 8 (40 - 32)");
+    CHECK_EQ(d->current_batch, 1, "val get_batch(1) stores current_batch == 1");
+
+    d->get_batch(1);
+    d->use_train();
+    CHECK(d->get_num_batches() == d->get_train_num_batches() && d->current_batch == 0 && snap(*d) == train0,
+        "use_train() switches back and resets to train batch 0");
+    {
+        Ref r = load_ref(TRAIN_CSV, INPUT_NODES, N_CLASSES);
+        Rows tr = epoch_rows(*d);
+        d->use_val();
+        Rows va = epoch_rows(*d);
+        d->use_train();
+
+        CHECK_EQ((int)tr.size(), 160, "full train epoch yields 160 samples");
+        CHECK_EQ((int)va.size(), 40, "full val epoch yields 40 samples");
+
+        std::multiset<std::vector<float>> got(tr.begin(), tr.end()), expected;
+        got.insert(va.begin(), va.end());
+        for (int i = 0; i < TRAIN_N; i++) expected.insert(ref_row(r, i));
+        CHECK(got == expected, "train + val epochs cover every reference sample exactly once");
     }
 
-    CHECK((int)all_seen_indices.size() == size, "full pass over dataset visits all 37 unique original images");
-    bool all_present = true;
-    for (int i = 0; i < size; i++) if (all_seen_indices.find(i) == all_seen_indices.end()) all_present = false;
-    CHECK(all_present, "all original indices 0..36 present after full epoch traversal");
+    auto big = make(64, 0.2f);
+    CHECK_EQ(big->get_train_num_batches(), 3, "batch 64, split 0.2: 3 train batches");
+    big->get_batch(2);
+    CHECK_EQ(big->current_batch_size, 160 - 2 * 64, "last train batch has 32 samples (no leak from val)");
+    big->use_val();
+    CHECK_EQ(big->get_num_batches(), 1, "batch 64, split 0.2: 1 val batch");
+    CHECK_EQ(big->current_batch_size, 40, "batch 64: single val batch has 40 samples");
 
-    ds.shuffle();
-    std::set<int> shuffled_seen;
-    ds.get_batch(0);
-    for (int bi = 0; bi < total_batches; bi++) {
-        if (bi > 0) ds.next_batch();
-        for (int b = 0; b < ds.current_batch_size; b++) {
-            float first_feature = ds.image_batch[b * input_nodes + 0];
-            int orig_idx = (int)std::round(first_feature / 100.0f);
-            shuffled_seen.insert(orig_idx);
-        }
+    auto sh = make(32, 0.2f);
+    Rows trainBefore = epoch_rows(*sh);
+    sh->use_val();
+    Rows valBefore = epoch_rows(*sh);
+    sh->shuffle();
+    CHECK_EQ(sh->current_batch, 0, "shuffle() in val mode resets current_batch to 0");
+    Rows valAfter = epoch_rows(*sh);
+    sh->use_train();
+    Rows trainAfter = epoch_rows(*sh);
+    CHECK(trainAfter == trainBefore, "shuffle() in val mode does not touch the train region");
+    CHECK(valAfter != valBefore, "shuffle() in val mode permutes the val region");
+    CHECK(std::multiset<std::vector<float>>(valAfter.begin(), valAfter.end()) ==
+          std::multiset<std::vector<float>>(valBefore.begin(), valBefore.end()),
+        "shuffle() in val mode keeps the same set of val samples");
+
+    auto sh2 = make(32, 0.2f);
+    sh2->use_val();
+    Rows valBefore2 = epoch_rows(*sh2);
+    sh2->use_train();
+    Rows trainBefore2 = epoch_rows(*sh2);
+    sh2->shuffle();
+    Rows trainAfter2 = epoch_rows(*sh2);
+    sh2->use_val();
+    Rows valAfter2 = epoch_rows(*sh2);
+    CHECK(valAfter2 == valBefore2, "shuffle() in train mode does not touch the val region");
+    CHECK(trainAfter2 != trainBefore2, "shuffle() in train mode permutes the train region");
+}
+
+static void test_csv_parsing()
+{
+    std::cout << "\n--- csv parsing edge cases ---\n";
+
+    {
+        std::string p = write_tmp("badlabel", "h\n0,1,2,3\n9,1,2,3\n-1,1,2,3\n1,4,5,6\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 2, 2); });
+        CHECK(!has(err, "Warning"), "out-of-range labels are skipped silently");
+        CHECK(d->image_batch[0] == 1.f && d->target_batch[0] == 1.f &&
+              d->image_batch[3] == 4.f && d->target_batch[4 + 1] == 1.f,
+              "rows around skipped labels are loaded correctly");
     }
-    CHECK((int)shuffled_seen.size() == size, "after shuffle, full epoch pass still visits all 37 unique images exactly once");
+    {
+        std::string p = write_tmp("badfeat", "h\n0,1,2,3\n1,1,2\n1,1\n2,7,8,9\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 2, 2); });
+        CHECK_EQ(count_substr(err, "Warning: line 3 has wrong number of features"), 2,
+                 "PIN: both bad rows report \"line 3\" (line number sticks to accepted count + 2)");
+        CHECK(!has(err, "line 4"), "no warning mentions line 4");
+        CHECK(d->target_batch[4 + 2] == 1.f && d->image_batch[3] == 7.f, "valid rows after bad ones are loaded");
+    }
+    {
+        std::string p = write_tmp("extra", "h\n0,1,2,3,4,5\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 1, 1); });
+        CHECK(!has(err, "Warning") && d->image_batch[2] == 3.f, "extra features are ignored without warning");
+    }
+    {
+        std::string p = write_tmp("dcomma", "h\n0,1,,3\n1,4,5,6\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 1, 1); });
+        CHECK_EQ(count_substr(err, "Warning: line 2"), 1, "double comma row triggers a warning");
+        CHECK(d->image_batch[0] == 4.f && d->target_batch[1] == 1.f, "double comma row is skipped");
+    }
+    {
+        std::string p = write_tmp("ws", "h\n0, 1.5, -2e-1,  3\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 1, 1); });
+        CHECK(!has(err, "Warning"), "spaces after commas are accepted");
+        CHECK(d->image_batch[0] == 1.5f && d->image_batch[1] == -0.2f && d->image_batch[2] == 3.f,
+              "decimal and exponent notation parsed correctly");
+    }
+    {
+        std::string p = write_tmp("crlf", "h\r\n0,1,2,3\r\n1,4,5,6\r\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 2, 2); });
+        CHECK(!has(err, "Warning"), "CRLF line endings produce no warnings");
+        CHECK(d->image_batch[5] == 6.f && d->target_batch[4 + 1] == 1.f, "CRLF rows parsed correctly");
+    }
+    {
+        std::string p = write_tmp("blank", "h\n\n0,1,2,3\n\n1,4,5,6\n");
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_small(p, 2, 2); });
+        CHECK(!has(err, "Warning") && d->image_batch[3] == 4.f, "blank lines are skipped silently");
+    }
+    {
+        std::string p = write_tmp("nohdr", "0,1,2,3\n1,4,5,6\n");
+        auto d = make_small(p, 1, 1);
+        CHECK(d->image_batch[0] == 4.f && d->target_batch[1] == 1.f,
+              "first line is always treated as header (first data row is lost)");
+    }
+    {
+        std::string p = write_tmp("manyrows", "h\n0,1,1,1\n1,2,2,2\n2,3,3,3\n3,4,4,4\n");
+        auto d = make_small(p, 2, 2);
+        CHECK(d->get_train_size() == 2 && d->get_train_num_batches() == 1 &&
+              d->current_batch_size == 2 && d->image_batch[3] == 2.f,
+              "loading stops after `size` valid rows");
+    }
+        {
+        std::string p = write_tmp("fewrows", "h\n0,1,2,3\n1,4,5,6\n");
+        CHECK_THROWS(make_small(p, 5, 2), std::runtime_error, "contains 2 valid rows, expected 5",
+                     "fewer valid rows than size throws runtime_error with found/expected counts");
+    }
+    {
+        std::string p = write_tmp("hdronly", "h\n");
+        CHECK_THROWS(make_small(p, 3, 2), std::runtime_error, "contains 0 valid rows, expected 3",
+                     "header-only file with size > 0 throws runtime_error");
+    }
+    {
+        std::string p = write_tmp("skipped_count", "h\n0,1,2,3\n9,1,2,3\n1,1,2\n");
+        std::string err = capture_cerr([&] {
+            try { make_small(p, 2, 2); } catch (const std::runtime_error&) {}
+        });
+        CHECK(has(err, "Warning: line 3"), "skipped rows still produce warnings before the exception");
+        CHECK_THROWS(make_small(p, 2, 2), std::runtime_error, "contains 1 valid rows, expected 2",
+                     "skipped (invalid) rows are not counted as valid");
+    }
+    {
+        std::string p = write_tmp("exact", "h\n0,1,2,3\n1,4,5,6\n");
+        auto d = make_small(p, 2, 2);
+        CHECK_EQ(d->get_train_size(), 2, "exact row count constructs normally");
+    }
+}
 
-    CUDA_CHECK(cudaFree(d_input));
-    CUDA_CHECK(cudaFree(d_output));
+static void test_crash_cases()
+{
+    std::cout << "\n--- crash / UB cases (isolated processes) ---\n";
+
+    int c1 = run_isolated("next_batch_uninit_num_batches");
+    std::cout << "[INFO] next_batch() with uninitialized num_batches: " << describe_exit(c1) << "\n";
+
+    int c2 = run_isolated("get_batch_negative_index");
+    std::cout << "[INFO] get_batch(-1): " << describe_exit(c2) << "\n";
+
+    int c3 = run_isolated("batch_size_zero");
+    std::cout << "[INFO] batch_size == 0: " << describe_exit(c3) << "\n";
+    CHECK(c3 != 0, "batch_size == 0 does not terminate normally (division by zero or CUDA error)");
+
+    int c4 = run_isolated("copy_double_free");
+    std::cout << "[INFO] copy of DatasetFile: " << describe_exit(c4) << "\n";
+}
+
+int main(int argc, char** argv)
+{
+    exe_path = argv[0];
+    register_isolated_cases();
+
+    if (argc >= 3 && std::string(argv[1]) == "--case") {
+        auto it = isolated_cases().find(argv[2]);
+        if (it == isolated_cases().end()) return 64;
+        try { return it->second(); }
+        catch (const std::exception& e) { std::cerr << e.what() << "\n"; return 2; }
+    }
+
+    try {
+        test_split_and_parse_val_fraction();
+        test_constructor_and_getters();
+        test_constructor_errors();
+        test_batches_content();
+        test_shuffle_and_seed();
+        test_train_val_modes();
+        test_csv_parsing();
+        test_crash_cases();
+    } catch (const std::exception& e) {
+        std::cerr << "[FAIL] unexpected exception: " << e.what() << "\n";
+        tests_failed++;
+    }
+
+    for (auto& p : tmp_files) std::remove(p.c_str());
 
     std::cout << "\n=== " << tests_run << " tests run, " << tests_failed << " failed ===\n";
     return tests_failed == 0 ? 0 : 1;

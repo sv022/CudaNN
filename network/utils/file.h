@@ -13,7 +13,7 @@
 #include"logging.h"
 
 
-std::vector<std::string> split(std::string str, char c) {
+inline std::vector<std::string> split(std::string str, char c) {
     std::vector<std::string> array;
     std::string element = "";
 
@@ -32,7 +32,7 @@ std::vector<std::string> split(std::string str, char c) {
     return array;
 }
 
-std::pair<int, float> parse_val_fraction(const std::string str) {
+inline std::pair<int, float> parse_val_fraction(const std::string str) {
     std::vector<std::string> parts = split(str, '/');
 
     if (parts.empty()) {
@@ -63,11 +63,8 @@ private:
     int input_nodes;
     int output_nodes;
     int batch_size;
-    int num_batches;
     int current_batch;
     std::string filepath;
-
-    bool isopen;
 
     float *images;
     float *labels;
@@ -89,6 +86,8 @@ private:
     int range_offset() const { return val_mode ? train_size : 0; }
     int range_size() const { return val_mode ? val_size : train_size; }
 
+    void release() noexcept;
+
 public:
     float *image_batch;
     float *target_batch;
@@ -97,6 +96,9 @@ public:
 
     DatasetFile(std::string filepath, int data_size, int inodes, int onodes, int batch_size_, float val_fraction = 0.0f, unsigned int seed = 12345);
     ~DatasetFile();
+
+    DatasetFile(const DatasetFile&) = delete;
+    DatasetFile& operator=(const DatasetFile&) = delete;
 
     void next_batch();
     void get_batch(int index);
@@ -116,46 +118,60 @@ public:
     int get_batch_size() const { return batch_size; }
     int get_input_nodes() const { return input_nodes; }
     int get_output_nodes() const { return output_nodes; }
+
+    friend void register_isolated_cases();
+    friend void test_batches_content();
+    friend void test_shuffle_and_seed();
+    friend void test_train_val_modes();
 };
 
 
 DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes, int batch_size_, float val_fraction, unsigned int seed) {
-    filepath = path;
-    size = data_size;
-    input_nodes = inodes;
-    output_nodes = onodes;
-    batch_size = batch_size_;
-    current_batch = 0;
-    val_mode = false;
-
-    isopen = false;
-
-    images = (float*)malloc((size_t)input_nodes * size * sizeof(float));
-    labels = (float*)malloc((size_t)output_nodes * size * sizeof(float));
-
-    if (!images || !labels) {
-        throw std::runtime_error("DatasetFile: failed to allocate host memory for dataset.");
-    }
-
+    images = nullptr;
+    labels = nullptr;
     image_batch = nullptr;
     target_batch = nullptr;
-    current_batch_size = 0;
-    rng.seed(seed);
 
-    allocate_batch_buffers();
+    try {
+        if (batch_size_ <= 0) throw std::invalid_argument("DatasetFile: batch_size must be positive.");
+        if (data_size < 0)    throw std::invalid_argument("DatasetFile: size can not be negative.");
+        
+        filepath = path;
+        size = data_size;
+        input_nodes = inodes;
+        output_nodes = onodes;
+        batch_size = batch_size_;
+        current_batch = 0;
+        val_mode = false;
 
-    if (path.substr(path.find_last_of(".") + 1) == "csv") LoadDataCSV();
-    else throw std::runtime_error("DatasetFile: Unsupported file format.");
+        images = (float*)malloc((size_t)input_nodes * size * sizeof(float));
+        labels = (float*)malloc((size_t)output_nodes * size * sizeof(float));
 
-    indices.resize(size);
-    for (int i = 0; i < size; i++) indices[i] = i;
+        if (!images || !labels) {
+            throw std::runtime_error("DatasetFile: failed to allocate host memory for dataset.");
+        }
 
-    if (val_fraction > 0.0f) {
-        std::shuffle(indices.begin(), indices.end(), rng);
+        current_batch_size = 0;
+        rng.seed(seed);
+
+        allocate_batch_buffers();
+
+        if (path.substr(path.find_last_of(".") + 1) == "csv") LoadDataCSV();
+        else throw std::runtime_error("DatasetFile: Unsupported file format.");
+
+        indices.resize(size);
+        for (int i = 0; i < size; i++) indices[i] = i;
+
+        if (val_fraction > 0.0f) {
+            std::shuffle(indices.begin(), indices.end(), rng);
+        }
+
+        build_split(val_fraction);
+        reset();
+    } catch (...) {
+        release();
+        throw;
     }
-
-    build_split(val_fraction);
-    reset();
 }
 
 
@@ -172,24 +188,12 @@ void DatasetFile::allocate_batch_buffers() {
     }
 }
 
-
-DatasetFile::~DatasetFile()
-{
-    if (image_batch) cudaFreeHost(image_batch);
-    if (target_batch) cudaFreeHost(target_batch);
-    free(images);
-    free(labels);
-}
-
-
 void DatasetFile::LoadDataCSV() {
     std::ifstream input_file(filepath, std::ios::in);
     if (!input_file.is_open()) {
         std::cerr << "Error: Could not open file " << filepath << std::endl;
         throw std::runtime_error("Error opening file.");
     }
-
-    isopen = true;
 
     std::string line;
     int image_count = 0;
@@ -238,6 +242,8 @@ void DatasetFile::LoadDataCSV() {
     }
     
     input_file.close();
+
+    if (image_count < size) throw std::runtime_error("DatasetFile: CSV contains " + std::to_string(image_count) + " valid rows, expected " + std::to_string(size) + ".");
 }
 
 
@@ -258,16 +264,20 @@ void DatasetFile::gather_batch(int start_pos, int count) {
 
 
 void DatasetFile::get_batch(int batch_index) {
-    int start_pos = batch_index * batch_size;
-    int count = std::min(batch_size, size - start_pos);
+    int local_start = batch_index * batch_size;
+    int start_pos = range_offset() + local_start;
+    int count = std::min(batch_size, range_size() - local_start);
     gather_batch(start_pos, count);
     current_batch = batch_index;
 }
 
 
 void DatasetFile::next_batch() {
-    current_batch = (current_batch + 1) % num_batches;
-    get_batch(current_batch);
+    const int n = get_num_batches();
+    if (n <= 0) {
+        throw std::runtime_error("DatasetFile::next_batch: no batches available.");
+    }
+    get_batch((current_batch + 1) % n);
 }
 
 
@@ -309,4 +319,16 @@ void DatasetFile::use_val() {
     
     val_mode = true;
     reset();
+}
+
+void DatasetFile::release() noexcept {
+    if (image_batch)  { cudaFreeHost(image_batch);  image_batch = nullptr; }
+    if (target_batch) { cudaFreeHost(target_batch); target_batch = nullptr; }
+    free(images);  images = nullptr;
+    free(labels);  labels = nullptr;
+}
+
+DatasetFile::~DatasetFile()
+{
+    release();
 }
