@@ -29,6 +29,7 @@ private:
     std::shared_ptr<Optimizer> optimizer;
     LossType loss_function;
 
+    ImageShape input_shape = ImageShape(0);
     int input_nodes;
     int output_nodes;
 
@@ -105,16 +106,19 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
         if (layer->layer_type == LayerType::Conv) {
             auto* c = static_cast<ConvStructure*>(layer);
             Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);
+            if (layers.size() == 0) input_shape = ImageShape(c->channels, c->input_height, c->input_width);
             add_layer(conv);
 
         } else if (layer->layer_type == LayerType::Pool) {
             auto* p = static_cast<PoolStructure*>(layer);
             MaxPooling* pool = new MaxPooling(p->input_width, p->input_height, p->channels, p->pool, p->stride);
+            if (layers.size() == 0) input_shape = ImageShape(p->channels, p->input_height, p->input_width);
             add_layer(pool);
 
         } else if (layer->layer_type == LayerType::Dense) {
             auto* d = static_cast<DenseStructure*>(layer);
             Dense* dense = new Dense(d->input_nodes, d->output_nodes);
+            if (layers.size() == 0) input_shape = ImageShape(d->input_nodes);
             add_layer(dense);
 
         } else if (layer->layer_type == LayerType::Activation) {
@@ -247,7 +251,7 @@ void NeuralNetwork::backward(float * /*inputs*/, float *targets, int current_bat
 
 
 void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction) {
-    DatasetFile train_file(data, data_size, input_nodes, output_nodes, batch_size, val_fraction);
+    DatasetFile train_file(data, data_size, input_shape, output_nodes, batch_size, val_fraction);
 
     int num_batches = train_file.get_train_num_batches();
     int progress_tick = num_batches / 100;
@@ -329,7 +333,7 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
 }
 
 float NeuralNetwork::test(std::string filePath, int data_size, int* test_targets, int* test_guesses) {
-    DatasetFile test_file(filePath, data_size, input_nodes, output_nodes, 1);
+    DatasetFile test_file(filePath, data_size, input_shape, output_nodes, 1);
 
     for (auto &layer : layers) layer->set_batch_size(1);
     set_is_training(false);

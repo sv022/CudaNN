@@ -13,6 +13,14 @@
 #include"logging.h"
 
 
+struct ImageShape {
+    int c, h, w;
+    ImageShape(int flat) : c(flat), h(0), w(0) {}
+    ImageShape(int c_, int h_, int w_) : c(c_), h(h_), w(w_) {}
+    int numel() const { return c * (h > 0 ? h : 1) * (w > 0 ? w : 1); }
+    bool is_image() const { return h > 0 && w > 0; }
+};
+
 inline std::vector<std::string> split(std::string str, char c) {
     std::vector<std::string> array;
     std::string element = "";
@@ -94,7 +102,7 @@ public:
 
     int current_batch_size;
 
-    DatasetFile(std::string filepath, int data_size, int inodes, int onodes, int batch_size_, float val_fraction = 0.0f, unsigned int seed = 12345);
+    DatasetFile(std::string filepath, int data_size, ImageShape input_shape, int onodes, int batch_size_, float val_fraction = 0.0f, unsigned int seed = 12345);
     ~DatasetFile();
 
     DatasetFile(const DatasetFile&) = delete;
@@ -126,7 +134,7 @@ public:
 };
 
 
-DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes, int batch_size_, float val_fraction, unsigned int seed) {
+DatasetFile::DatasetFile(std::string path, int data_size, ImageShape input_shape, int onodes, int batch_size_, float val_fraction, unsigned int seed) {
     images = nullptr;
     labels = nullptr;
     image_batch = nullptr;
@@ -135,10 +143,10 @@ DatasetFile::DatasetFile(std::string path, int data_size, int inodes, int onodes
     try {
         if (batch_size_ <= 0) throw std::invalid_argument("DatasetFile: batch_size must be positive.");
         if (data_size < 0)    throw std::invalid_argument("DatasetFile: size can not be negative.");
-        
+
         filepath = path;
         size = data_size;
-        input_nodes = inodes;
+        input_nodes = input_shape.numel();
         output_nodes = onodes;
         batch_size = batch_size_;
         current_batch = 0;
