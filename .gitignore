@@ -11,6 +11,9 @@
 # Built Visual Studio Code Extensions
 *.vsix
 
+# External lib
+network/utils/stb_image_resize2.h
+
 output/
 runs/
 predict/
