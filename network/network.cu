@@ -9,9 +9,10 @@
 #include"matrix/matrix.cuh"
 #include"utils/progressbar.h"
 #include"utils/utils.h"
-#include"utils/file.h"
 #include"utils/structure.h"
 #include"utils/logging.h"
+
+#include"file/file.cuh"
 
 #include"optimizer/optimizer.cuh"
 #include"loss/loss.cuh"
