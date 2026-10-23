@@ -16,18 +16,6 @@
 #include <string>
 #include <vector>
 
-// Tests on a real image directory (labels.txt + class folders).
-//
-// Usage:  test_dataset_real <dataset_dir> [C H W [max_samples [batch_size]]]
-//   dataset_dir  directory that contains labels.txt and the class folders
-//   C H W        network input shape (default 3 64 64) - set it to your network input
-//   max_samples  use only the first N valid rows (default 0 = all) - to keep the run short
-//   batch_size   batch size used by the tests (default 32)
-//
-// The tests do not assume a particular number of images: the expected values are derived from
-// labels.txt by an independent reference parser, and image content is compared with a direct
-// decode through stb_image. Only the public interface of DatasetFile is used.
-
 struct Config {
     std::string dir;
     int C = 3, H = 64, W = 64;
@@ -173,7 +161,6 @@ static uint64_t row_hash(const DatasetFile& d, int j)
     return fnv(d.target_batch + (size_t)j * n_classes, n_classes, h);
 }
 
-// hashes of (image, target) of every sample of the current mode, in batch order
 static std::vector<uint64_t> epoch_hashes(DatasetFile& d)
 {
     std::vector<uint64_t> hs;

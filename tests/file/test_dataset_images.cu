@@ -147,8 +147,6 @@ static std::string add_ppm(const std::string& dir, const std::string& sub, const
     return write_file(folder + "/" + name, ppm_bytes(w, h, rgb));
 }
 
-// n images; image i is solid (v, v+1, v+2) with v = 10 * (i + 1); label = i % N_CLASSES.
-// labels.txt uses backslashes and CRLF, as in the original Windows data set.
 static std::string build_main_dir(const std::string& name, int n = IMG_N, int w = SRC_W, int h = SRC_H)
 {
     std::string dir = make_img_dir(name);
@@ -209,7 +207,6 @@ static Rows epoch_rows(DatasetFile& d, int in)
     return rows;
 }
 
-// reference row of image i from build_main_dir (3 x SRC_H x SRC_W, CHW, /255, one-hot)
 static std::vector<float> ref_img_row(int i)
 {
     int v = 10 * (i + 1);
