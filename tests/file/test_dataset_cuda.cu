@@ -1,7 +1,8 @@
-#include "../../network/utils/file.h"
+#include "../../network/file/file.cuh"
 #include <cuda_runtime.h>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -612,6 +613,310 @@ static void test_csv_parsing()
     }
 }
 
+// ---------------- .bin (IMGS) helpers ----------------
+
+struct BinRec { uint16_t label; std::vector<uint8_t> px; };
+
+static float norm255(uint8_t v) { return v * (1.0f / 255.0f); }
+
+static bool near_vec(const std::vector<float>& a, const std::vector<float>& b, float eps)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) if (!(std::fabs(a[i] - b[i]) <= eps)) return false;
+    return true;
+}
+
+static std::vector<BinRec> make_recs(int n, int pix, int nl)
+{
+    std::vector<BinRec> r(n);
+    for (int i = 0; i < n; i++) {
+        r[i].label = (uint16_t)(i % nl);
+        r[i].px.resize(pix);
+        for (int k = 0; k < pix; k++) r[i].px[k] = (uint8_t)((i * 37 + k * 11 + 3) % 256);
+    }
+    if (n > 0 && pix >= 5) {                 // bytes that text mode would damage: \n, \r, 0x1A, 0, 255
+        const uint8_t sp[5] = {10, 13, 26, 0, 255};
+        for (int k = 0; k < 5; k++) r[0].px[k] = sp[k];
+    }
+    return r;
+}
+
+static std::string write_bin_file(const std::string& name, int W, int H, int C,
+                                  const std::vector<std::string>& label_names,
+                                  const std::vector<BinRec>& recs,
+                                  long long declared_count = -1, size_t tail_garbage = 0)
+{
+    std::string p = "_tmp_" + name + ".bin";
+    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    f.write("IMGS", 4);
+    uint8_t ver = 1, c = (uint8_t)C;
+    uint16_t w = (uint16_t)W, h = (uint16_t)H, nl = (uint16_t)label_names.size();
+    f.write((const char*)&ver, 1); f.write((const char*)&w, 2); f.write((const char*)&h, 2); f.write((const char*)&c, 1);
+    f.write((const char*)&nl, 2);
+    for (auto& s : label_names) {
+        uint16_t len = (uint16_t)s.size();
+        f.write((const char*)&len, 2);
+        f.write(s.data(), len);
+    }
+    uint32_t cnt = declared_count < 0 ? (uint32_t)recs.size() : (uint32_t)declared_count;
+    f.write((const char*)&cnt, 4);
+    for (auto& r : recs) {
+        f.write((const char*)&r.label, 2);
+        f.write((const char*)r.px.data(), (std::streamsize)r.px.size());
+    }
+    for (size_t i = 0; i < tail_garbage; i++) f.put((char)0x7F);
+    tmp_files.push_back(p);
+    return p;
+}
+
+static std::string write_raw_bin(const std::string& name, const std::string& bytes)
+{
+    std::string p = "_tmp_" + name + ".bin";
+    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    f.write(bytes.data(), (std::streamsize)bytes.size());
+    tmp_files.push_back(p);
+    return p;
+}
+
+static void patch_byte(const std::string& path, std::streamoff off, uint8_t v)
+{
+    std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(off);
+    f.put((char)v);
+}
+
+// expected sample row: channel-planar normalized pixels followed by the one-hot target
+static std::vector<float> bin_expected_row(const BinRec& r, int W, int H, int C, int NL)
+{
+    std::vector<float> v((size_t)W * H * C + NL, 0.f);
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++)
+            for (int ch = 0; ch < C; ch++)
+                v[(size_t)ch * H * W + y * W + x] = norm255(r.px[((size_t)y * W + x) * C + ch]);
+    v[(size_t)W * H * C + r.label] = 1.f;
+    return v;
+}
+
+static std::unique_ptr<DatasetFile> make_bin(const std::string& path, int size, int in, int out, int bs,
+                                             float vf = 0.f, unsigned seed = 12345u)
+{
+    return std::unique_ptr<DatasetFile>(new DatasetFile(path, size, in, out, bs, vf, seed));
+}
+
+static Rows rows_of(DatasetFile& d, int in, int out)
+{
+    Rows rows;
+    for (int b = 0; b < d.get_num_batches(); b++) {
+        d.get_batch(b);
+        for (int j = 0; j < d.current_batch_size; j++) rows.push_back(sample_row(d, j, in, out));
+    }
+    return rows;
+}
+
+// ---------------- .bin (IMGS) tests ----------------
+
+static void test_bin_loading()
+{
+    std::cout << "\n--- .bin (IMGS): content, layout, normalization ---\n";
+
+    {   // single channel, partial last batch
+        const int W = 4, H = 3, C = 1, NL = 3, N = 6, BS = 4, PIX = W * H * C;
+        auto recs = make_recs(N, PIX, NL);
+        std::string p = write_bin_file("gray", W, H, C, {"a", "b", "c"}, recs);
+        auto d = make_bin(p, N, PIX, NL, BS);
+
+        CHECK(d->get_train_size() == N && d->get_train_num_batches() == 2, "bin gray: size 6, 2 batches (4 + 2)");
+        bool ok = true;
+        for (int j = 0; j < 4; j++)
+            ok = ok && near_vec(sample_row(*d, j, PIX, NL), bin_expected_row(recs[j], W, H, C, NL), 1e-6f);
+        CHECK(ok, "bin gray: batch 0 equals pixels / 255 with one-hot targets, in file order");
+
+        CHECK(std::fabs(d->image_batch[0] - 10.f / 255.f) < 1e-6f && std::fabs(d->image_batch[1] - 13.f / 255.f) < 1e-6f &&
+              std::fabs(d->image_batch[2] - 26.f / 255.f) < 1e-6f && d->image_batch[3] == 0.f &&
+              std::fabs(d->image_batch[4] - 1.0f) < 1e-6f,
+              "bin gray: bytes 10, 13, 26, 0, 255 survive intact (binary mode)");
+
+        d->get_batch(1);
+        CHECK_EQ(d->current_batch_size, 2, "bin gray: last batch is partial (2 of 4)");
+        ok = true;
+        for (int j = 0; j < 2; j++)
+            ok = ok && near_vec(sample_row(*d, j, PIX, NL), bin_expected_row(recs[4 + j], W, H, C, NL), 1e-6f);
+        CHECK(ok, "bin gray: batch 1 matches records 4 and 5");
+    }
+
+    {   // three channels: interleaved HWC in the file -> channel-planar CHW in the batch
+        const int W = 3, H = 2, C = 3, NL = 2, N = 3, PIX = W * H * C;
+        std::vector<BinRec> recs(N);
+        for (int i = 0; i < N; i++) {
+            recs[i].label = (uint16_t)(i % NL);
+            recs[i].px.resize(PIX);
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                    for (int ch = 0; ch < C; ch++)
+                        recs[i].px[((size_t)y * W + x) * C + ch] = (uint8_t)(100 * ch + 10 * y + x + i);
+        }
+        std::string p = write_bin_file("color", W, H, C, {"a", "b"}, recs);
+        auto d = make_bin(p, N, PIX, NL, N);
+        bool ok = true;
+        for (int j = 0; j < N; j++)
+            ok = ok && near_vec(sample_row(*d, j, PIX, NL), bin_expected_row(recs[j], W, H, C, NL), 1e-6f);
+        CHECK(ok, "bin color: interleaved HWC bytes become channel-planar CHW");
+    }
+}
+
+static void test_bin_size_and_records()
+{
+    std::cout << "\n--- .bin: size, header count, skipped records ---\n";
+    const int W = 4, H = 3, C = 1, NL = 3, PIX = W * H * C;
+
+    {
+        auto recs = make_recs(6, PIX, NL);
+        std::string p = write_bin_file("prefix", W, H, C, {"a", "b", "c"}, recs);
+        auto d = make_bin(p, 4, PIX, NL, 4);
+        bool ok = (d->get_train_size() == 4);
+        for (int j = 0; j < 4; j++)
+            ok = ok && near_vec(sample_row(*d, j, PIX, NL), bin_expected_row(recs[j], W, H, C, NL), 1e-6f);
+        CHECK(ok, "bin: size smaller than the file loads the first `size` records");
+        CHECK_THROWS(make_bin(p, 7, PIX, NL, 4), std::runtime_error, "file contains only 6 valid rows, expected 7",
+                     "bin: size larger than the record count throws with found/expected counts");
+    }
+    {
+        auto recs = make_recs(6, PIX, NL);
+        std::string p0 = write_bin_file("cnt0", W, H, C, {"a", "b", "c"}, recs, 0);
+        auto d0 = make_bin(p0, 6, PIX, NL, 6);
+        CHECK(near_vec(sample_row(*d0, 5, PIX, NL), bin_expected_row(recs[5], W, H, C, NL), 1e-6f),
+              "PIN: header count == 0 (unfinished export) is ignored, records are read until EOF");
+        std::string p9 = write_bin_file("cnt999", W, H, C, {"a", "b", "c"}, recs, 999);
+        auto d9 = make_bin(p9, 6, PIX, NL, 6);
+        CHECK_EQ(d9->get_train_size(), 6, "PIN: header count larger than the real one is ignored");
+    }
+    {
+        auto recs = make_recs(6, PIX, NL);
+        recs[1].label = 9;                   // label index outside [0, NL)
+        recs[4].label = 7;
+        std::string p = write_bin_file("badlab", W, H, C, {"a", "b", "c"}, recs);
+        std::unique_ptr<DatasetFile> d;
+        std::string err = capture_cerr([&] { d = make_bin(p, 4, PIX, NL, 4); });
+        CHECK(!has(err, "Warning"), "bin: out-of-range label indices are skipped silently");
+        const int keep[4] = {0, 2, 3, 5};
+        bool ok = true;
+        for (int j = 0; j < 4; j++)
+            ok = ok && near_vec(sample_row(*d, j, PIX, NL), bin_expected_row(recs[keep[j]], W, H, C, NL), 1e-6f);
+        CHECK(ok, "bin: rows around skipped records are loaded in file order");
+        CHECK_THROWS(make_bin(p, 5, PIX, NL, 4), std::runtime_error, "file contains only 4 valid rows, expected 5",
+                     "bin: skipped records are not counted as valid");
+    }
+    {
+        auto recs = make_recs(3, PIX, NL);
+        std::string p = write_bin_file("tail", W, H, C, {"a", "b", "c"}, recs, -1, 5);   // trailing bytes shorter than a record
+        auto d = make_bin(p, 3, PIX, NL, 3);
+        CHECK_EQ(d->get_train_size(), 3, "bin: trailing partial record does not affect complete records");
+        CHECK_THROWS(make_bin(p, 4, PIX, NL, 3), std::runtime_error, "file contains only 3 valid rows, expected 4",
+                     "bin: trailing partial record is not counted as a row");
+    }
+}
+
+static void test_bin_errors()
+{
+    std::cout << "\n--- .bin: header and file errors ---\n";
+    const int W = 4, H = 3, C = 1, NL = 3, N = 4, PIX = W * H * C;
+    auto good = [&] { return write_bin_file("e_good", W, H, C, {"a", "b", "c"}, make_recs(N, PIX, NL)); };
+
+    {
+        std::string p = good();
+        auto d = make_bin(p, N, PIX, NL, 2);
+        CHECK_EQ(d->get_train_size(), N, "control: the untouched file loads without errors");
+    }
+    {
+        std::string p = good(); patch_byte(p, 0, 'X');
+        CHECK_THROWS(make_bin(p, N, PIX, NL, 2), std::runtime_error, "bad .bin header", "bin: wrong signature");
+    }
+    {
+        std::string p = good(); patch_byte(p, 4, 2);
+        CHECK_THROWS(make_bin(p, N, PIX, NL, 2), std::runtime_error, "bad .bin header", "bin: unsupported version");
+    }
+    {
+        std::string p = write_raw_bin("e_empty", "");
+        CHECK_THROWS(make_bin(p, N, PIX, NL, 2), std::runtime_error, "bad .bin header", "bin: empty file");
+    }
+    {   // header without the sample count
+        std::string b = std::string("IMGS") + std::string("\x01", 1) +
+                        std::string("\x04\x00\x03\x00\x01\x01\x00\x01\x00" "a", 10);
+        std::string p = write_raw_bin("e_nocount", b);
+        CHECK_THROWS(make_bin(p, 1, PIX, 1, 1), std::runtime_error, "truncated .bin header",
+                     "bin: header cut before the sample count");
+    }
+    {
+        std::string p = good();
+        CHECK_THROWS(make_bin(p, N, PIX + 1, NL, 2), std::runtime_error, "does not match the network",
+                     "bin: w*h*c differs from the network input size");
+        CHECK_THROWS(make_bin(p, N, PIX, NL + 1, 2), std::runtime_error, "does not match the network",
+                     "bin: label count differs from output_nodes");
+    }
+    {
+        std::string err = capture_cerr([] {
+            try { make_bin("data/does_not_exist.bin", 1, 12, 3, 1); } catch (const std::runtime_error&) {}
+        });
+        CHECK(has(err, "Could not open file"), "bin: missing file message is written to cerr");
+        CHECK_THROWS(make_bin("data/does_not_exist.bin", 1, 12, 3, 1), std::runtime_error, "Error opening file.",
+                     "bin: missing file throws runtime_error");
+    }
+    {
+        std::string p = good();
+        std::string up = "_tmp_e_good.BIN";
+        { std::ifstream in(p, std::ios::binary); std::ofstream out(up, std::ios::binary | std::ios::trunc); out << in.rdbuf(); }
+        tmp_files.push_back(up);
+        CHECK_THROWS(make_bin(up, N, PIX, NL, 2), std::runtime_error, "Unsupported file format",
+                     "bin: extension check is case-sensitive (.BIN rejected)");
+    }
+}
+
+static void test_bin_split_and_csv()
+{
+    std::cout << "\n--- .bin: train/val split and agreement with csv ---\n";
+    const int W = 4, H = 3, C = 1, NL = 3, PIX = W * H * C;
+
+    {
+        const int N = 20;
+        auto recs = make_recs(N, PIX, NL);
+        std::string p = write_bin_file("split", W, H, C, {"a", "b", "c"}, recs);
+        auto d = make_bin(p, N, PIX, NL, 4, 0.25f, 7u);
+        CHECK(d->get_val_size() == 5 && d->get_train_size() == 15, "bin split 0.25: 15 train + 5 val");
+        Rows tr = rows_of(*d, PIX, NL);
+        d->use_val();
+        Rows va = rows_of(*d, PIX, NL);
+        d->use_train();
+        std::multiset<std::vector<float>> got(tr.begin(), tr.end()), expected;
+        got.insert(va.begin(), va.end());
+        for (int i = 0; i < N; i++) expected.insert(bin_expected_row(recs[i], W, H, C, NL));
+        CHECK(got == expected, "bin split: train + val cover every record exactly once");
+        auto d2 = make_bin(p, N, PIX, NL, 4, 0.25f, 7u);
+        CHECK(snap(*d, PIX, NL) == snap(*d2, PIX, NL), "bin split: same seed gives the same split");
+    }
+    {   // the same samples stored as csv and as bin give the same batches
+        const int N = 5;
+        auto recs = make_recs(N, PIX, NL);
+        std::string p = write_bin_file("xfmt", W, H, C, {"a", "b", "c"}, recs);
+        std::string text = "h\n";
+        for (auto& r : recs) {
+            text += std::to_string(r.label);
+            for (int k = 0; k < PIX; k++) {
+                char buf[32];
+                std::snprintf(buf, sizeof buf, ",%.9g", r.px[k] / 255.0f);
+                text += buf;
+            }
+            text += "\n";
+        }
+        std::string csv = write_tmp("xfmt", text);
+        auto dc = make_bin(csv, N, PIX, NL, N);
+        auto db = make_bin(p, N, PIX, NL, N);
+        bool same = true;
+        for (int j = 0; j < N; j++)
+            same = same && near_vec(sample_row(*dc, j, PIX, NL), sample_row(*db, j, PIX, NL), 1e-6f);
+        CHECK(same, "csv and bin with the same samples give the same batches (single channel)");
+    }
+}
+
 static void test_crash_cases()
 {
     std::cout << "\n--- crash / UB cases (isolated processes) ---\n";
@@ -650,6 +955,10 @@ int main(int argc, char** argv)
         test_shuffle_and_seed();
         test_train_val_modes();
         test_csv_parsing();
+        test_bin_loading();
+        test_bin_size_and_records();
+        test_bin_errors();
+        test_bin_split_and_csv();
         test_crash_cases();
     } catch (const std::exception& e) {
         std::cerr << "[FAIL] unexpected exception: " << e.what() << "\n";
