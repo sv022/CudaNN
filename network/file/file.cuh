@@ -1,8 +1,23 @@
 #pragma once
 #include"include.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include"stb_image.h"
+#if defined(NN_NO_IMAGES)
+    #define NN_HAS_IMAGES 0
+#elif defined(__has_include)
+    #if __has_include("stb_image.h")
+        #define NN_HAS_IMAGES 1
+    #else
+        #define NN_HAS_IMAGES 0
+    #endif
+#else
+    #define NN_HAS_IMAGES 1
+#endif
+
+#if NN_HAS_IMAGES
+    #define STB_IMAGE_IMPLEMENTATION
+    #include"stb_image.h"
+#endif
+
 #include"image.h"
 #include"../utils/utils.h"
 #include"../utils/logging.h"
@@ -140,7 +155,13 @@ DatasetFile::DatasetFile(std::string path, int data_size, ImageShape input_shape
         img_w = input_shape.w;
 
         std::error_code ec;
+
         lazy_images = check_folder_exists(path);
+        #if !NN_HAS_IMAGES
+        if (lazy_images)
+            throw std::runtime_error("DatasetFile: image directory support is disabled in this build.");
+        #endif
+
         if (lazy_images) {
             if (!input_shape.is_image())
                 throw std::invalid_argument("DatasetFile: directory mode requires ImageShape{c, h, w}.");
@@ -306,67 +327,71 @@ void DatasetFile::LoadDataBin() {
 }
 
 void DatasetFile::LoadDataImages() {
+#if NN_HAS_IMAGES
     std::string root = filepath;
     while (!root.empty() && (root.back() == '/' || root.back() == '\\')) root.pop_back();
     const std::string list_path = root + "/labels.txt";
-
+    
     std::ifstream list(list_path, std::ios::in);
     if (!list.is_open()) {
         std::cerr << "Error: Could not open file " << list_path << std::endl;
         throw std::runtime_error("Error opening file.");
     }
-
+    
     int progress_tick = size / 100;
     if (size < 100) progress_tick = 1;
-
+    
     paths.reserve(size);
     std::string line;
     int image_count = 0;
     long line_no = 0;
-
+    
     while (image_count < size && std::getline(list, line)) {
         ++line_no;
-
+    
         if (line_no == 1 && line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t'))
             line.pop_back();
         if (line.empty()) continue;
-
+    
         size_t sep = line.find_last_of(" \t");
         if (sep == std::string::npos) continue;
-
+    
         const char* num = line.c_str() + sep + 1;
         char* num_end;
         long label = std::strtol(num, &num_end, 10);
         if (num_end == num || *num_end != '\0' || label < 0 || label >= output_nodes) continue;
-
+    
         std::string rel = line.substr(0, sep);
         while (!rel.empty() && (rel.back() == ' ' || rel.back() == '\t')) rel.pop_back();
         std::replace(rel.begin(), rel.end(), '\\', '/');
         const std::string full = root + "/" + rel;
-
+    
         int w = 0, h = 0, n = 0;
         if (!stbi_info(full.c_str(), &w, &h, &n)) {
             std::cerr << "Warning: line " << line_no << " image can not be read: " << full << "\n";
             continue;
         }
-
+    
         for (int i = 0; i < output_nodes; ++i)
             labels[(size_t)image_count * output_nodes + i] = (i == (int)label) ? 1.0f : 0.0f;
         paths.push_back(full);
-
+    
         if (image_count % progress_tick == 0) {
             log_data_loading_process(size, image_count);
         }
         ++image_count;
     }
-
+    
     if (image_count < size)
         throw std::runtime_error("DatasetFile: image list contains " + std::to_string(image_count) + " valid rows, expected " + std::to_string(size) + ".");
+#else
+    throw std::runtime_error("DatasetFile: image directory support is disabled in this build.");
+#endif
 }
 
-void DatasetFile::load_image_into(const std::string& path, float* dst) const
-{
+void DatasetFile::load_image_into(const std::string& path, float* dst) const {
+#if NN_HAS_IMAGES
     int w = 0, h = 0, n = 0;
     std::unique_ptr<unsigned char, void(*)(void*)> data(
         stbi_load(path.c_str(), &w, &h, &n, img_c), stbi_image_free);
@@ -374,6 +399,10 @@ void DatasetFile::load_image_into(const std::string& path, float* dst) const
         throw std::runtime_error("DatasetFile: failed to decode image " + path + ": " + stbi_failure_reason());
     }
     resize_to_chw(data.get(), w, h, img_c, dst, img_w, img_h);
+#else
+    (void)path; (void)dst;
+    throw std::runtime_error("DatasetFile: image directory support is disabled in this build.");
+#endif
 }
 
 void DatasetFile::gather_batch(int start_pos, int count) {
