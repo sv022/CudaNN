@@ -81,6 +81,7 @@ private:
     void LoadDataImages();
 
     void load_image_into(const std::string& path, float* dst) const;
+    void gather_images_parallel(int start_pos, int count);
     void gather_batch(int start_pos, int count);
     void allocate_batch_buffers();
     void build_split(float val_fraction);
@@ -405,18 +406,48 @@ void DatasetFile::load_image_into(const std::string& path, float* dst) const {
 #endif
 }
 
+#if NN_HAS_IMAGES
+#include <thread>
+#include <mutex>
+#include <exception>
+
+void DatasetFile::gather_images_parallel(int start_pos, int count) {
+    const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+    const int T = (int)std::min<unsigned>(hw, (unsigned)std::max(count, 1));
+    std::exception_ptr first_error;
+    std::mutex err_mu;
+
+    auto work = [&](int t) {
+        try {
+            for (int b = t; b < count; b += T) {
+                int src_idx = indices[start_pos + b];
+                load_image_into(paths[src_idx], image_batch + (size_t)b * input_nodes);
+            }
+        } catch (...) {
+            std::lock_guard<std::mutex> g(err_mu);
+            if (!first_error) first_error = std::current_exception();
+        }
+    };
+
+    std::vector<std::thread> pool;
+    pool.reserve(T > 1 ? T - 1 : 0);
+    for (int t = 1; t < T; ++t) pool.emplace_back(work, t);
+    work(0);
+    for (auto& th : pool) th.join();
+    if (first_error) std::rethrow_exception(first_error);
+}
+#endif
+
 void DatasetFile::gather_batch(int start_pos, int count) {
+#if NN_HAS_IMAGES
+    if (lazy_images) gather_images_parallel(start_pos, count);
+#endif
     for (int b = 0; b < count; b++) {
         int src_idx = indices[start_pos + b];
-
-        if (lazy_images) {
-            load_image_into(paths[src_idx], image_batch + (size_t)b * input_nodes);
-        } else {
+        if (!lazy_images)
             memcpy(image_batch + (size_t)b * input_nodes,
                    images + (size_t)src_idx * input_nodes,
                    input_nodes * sizeof(float));
-        }
-
         memcpy(target_batch + (size_t)b * output_nodes,
                labels + (size_t)src_idx * output_nodes,
                output_nodes * sizeof(float));
