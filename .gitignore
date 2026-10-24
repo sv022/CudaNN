@@ -12,7 +12,7 @@
 *.vsix
 
 # External lib
-network/utils/stb_image_resize2.h
+network/file/stb_image.h
 
 output/
 runs/
