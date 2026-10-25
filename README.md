@@ -15,11 +15,18 @@ Download to your project directory, make sure you have the latest version of `nv
 nvcc .\main.cu -o network.exe
 ```
 
+> [!NOTE]
+> Project uses `stb_image.h` for image processing, which is not included in repo files.
+
+To compile with image loading support make sure to add `./network/file/stb_image.h`.
+
+To compile without image loading support use `-DNN_NO_IMAGES` flag.
+
 ## Usage
 
 You can use command line to run the program with given parameters.
 
-To configure network structure, a `layer_config_string` is used. It contains information about all layers in the network, as well as layers' properties.
+To configure network structure, a `layer_config_string` is used. It contains information about all layers in the network, as well as layers' properties. For more details on layer config see [project wiki](https://github.com/sv022/CudaNN/wiki) _(in development)_.
 
 Example of a config string with a visualisation:
 
@@ -39,11 +46,10 @@ Args list for testing:
 <mode (TEST=0)> <layer_config_string> <test_data_size> <test_data_path> <weights_path> <current_dir> <report_file_name>
 ```
 
-`<current_dir>` is where results will be saved in `./runs` subdirectory.
 
 `<weights_path>` is the path to `.bin` file that contains weights that will be loaded and used in the model.
 
-`<current_dir>` is where results will be saved in `./predict` subdirectory.
+`<current_dir>` is where weights and report files will be saved in `./runs` subdirectory for TRAIN, `./predict` subdirectory for TEST.
 
 `<report_file_name>` will be used to generate the report file after the run is completed. Using '-' will automatically generate report name using datetime. 
 
@@ -52,3 +58,13 @@ Example:
 ```sh
 .\network.exe 1 "conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dropout_0.5-dense_256_10-activation_softmax" sgd 0.05 cce 5 128 60000 10000 D:/path/to/digits-mnist_train.csv D:/path/to/digits-mnist_test.csv 1 - D:/results/are/saved/here -
 ```
+
+## Supported data formats
+
+Module `file.cuh` provides data loaders for several dataset formats. For more details on each format see [project wiki](https://github.com/sv022/CudaNN/wiki) _(in development)_.
+
+| Format | Pixels |  Layout |     Note    |
+| ------ | -------| --------| ----------- |
+|  csv   | float  | CHW RGB | Header as first row;<br>Pixels normalized by 255  |
+|  bin   | uint8  | CHW RGB | Includes dataset meta  |
+|  raw   |  raw   | CHW RGB | Uses `labels.txt` to process folder  |
