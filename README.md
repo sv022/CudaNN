@@ -53,10 +53,48 @@ Args list for testing:
 
 `<report_file_name>` will be used to generate the report file after the run is completed. Using '-' will automatically generate report name using datetime. 
 
-Example:
+Example (`run_train.bat`):
 
-```sh
-.\network.exe 1 "conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dropout_0.5-dense_256_10-activation_softmax" sgd 0.05 cce 5 128 60000 10000 D:/path/to/digits-mnist_train.csv D:/path/to/digits-mnist_test.csv 1 - D:/results/are/saved/here -
+```bat
+@echo off
+REM Example script for launching network.exe.
+
+set EXE_PATH=.\network.exe
+set MODE=1
+set LAYER_CONFIG="conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dropout_0.5-dense_256_10-activation_softmax"
+set OPTIMIZER=sgd
+set LEARNING_RATE=0.05
+set LOSS=cce
+set EPOCHS=5
+set BATCH_SIZE=128
+set TRAIN_SIZE=60000
+set TEST_SIZE=10000
+set TRAIN_PATH=D:/path/to/digits-mnist_train.csv
+set TEST_PATH=D:/path/to/digits-mnist_test.csv
+set SAVE_WEIGHTS=1
+set WEIGHTS_PATH=-
+set CURRENT_DIR=D:/results/are/saved/here
+set REPORT_FILE_NAME=-
+
+%EXE_PATH% %MODE% %LAYER_CONFIG% %OPTIMIZER% %LEARNING_RATE% %LOSS% %EPOCHS% %BATCH_SIZE% %TRAIN_SIZE% %TEST_SIZE% %TRAIN_PATH% %TEST_PATH% %SAVE_WEIGHTS% %WEIGHTS_PATH% %CURRENT_DIR% %REPORT_FILE_NAME%
+```
+
+Example (`run_test.bat`):
+
+```bat
+@echo off
+REM Example script for launching network.exe.
+
+set EXE_PATH=.\network.exe
+set MODE=0
+set LAYER_CONFIG="conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-activation_relu-pool_11x11x32_2_2-dense_800_256-activation_sigmoid-dropout_0.5-dense_256_10-activation_softmax"
+set TEST_SIZE=10000
+set TEST_PATH=D:/path/to/digits-mnist_test.csv
+set WEIGHTS_PATH=D:/path/to/saved_weights.bin
+set CURRENT_DIR=D:/results/are/saved/here
+set REPORT_FILE_NAME=digits_test_results
+
+%EXE_PATH% %MODE% %LAYER_CONFIG% %TEST_SIZE% %TEST_PATH% %WEIGHTS_PATH% %CURRENT_DIR% %REPORT_FILE_NAME%
 ```
 
 ## Supported data formats
