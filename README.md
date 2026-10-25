@@ -46,6 +46,11 @@ Args list for testing:
 <mode (TEST=0)> <layer_config_string> <test_data_size> <test_data_path> <weights_path> <current_dir> <report_file_name>
 ```
 
+Args list for inference:
+```sh
+<mode (INFER=2)> <layer_config_string> <test_data_path> <weights_path> [<c> <h> <w>]
+```
+
 
 `<weights_path>` is the path to `.bin` file that contains weights that will be loaded and used in the model.
 
