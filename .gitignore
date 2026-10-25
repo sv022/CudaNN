@@ -17,6 +17,7 @@ network/file/stb_image.h
 output/
 runs/
 predict/
+cmd/
 dev/
 test.cpp
 test.cu
