@@ -59,6 +59,11 @@ private:
     void train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction = 0.0f);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
+    void get_outputs(float* dst) const { std::memcpy(dst, layers.back()->outputs, (size_t)output_nodes * sizeof(float)); };
+    int get_output_nodes() const { return output_nodes; };
+    ImageShape get_input_shape() const { return input_shape; };
+    ActivationType get_output_activation() const  { return layers.back()->activation_type; }
+
     void log_structure();
 
     void save_weights(std::string path);
@@ -233,7 +238,7 @@ void NeuralNetwork::backward(float * /*inputs*/, float *targets, int current_bat
     h_output_errors = (float*)realloc(h_output_errors, n_err * sizeof(float));
     const float *output = layers.back()->outputs;
     for (size_t i = 0; i < n_err; ++i) h_output_errors[i] = targets[i] - output[i];
-    ensure_device(&d_output_errors, &d_err_cap, n_err);            // <- добавить
+    ensure_device(&d_output_errors, &d_err_cap, n_err);
     cudaMemcpy(d_output_errors, h_output_errors, n_err * sizeof(float), cudaMemcpyHostToDevice);
 
     bool raw_gradient_for_last_layer =

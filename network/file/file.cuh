@@ -50,6 +50,23 @@ inline std::pair<int, float> parse_val_fraction(const std::string str) {
     return {val_base, val_fraction};
 }
 
+inline void load_image_chw(const std::string& path, const ImageShape& shape, float* dst) {
+#if NN_HAS_IMAGES
+    if (shape.c < 1 || shape.c > 4)
+        throw std::invalid_argument("load_image_chw: channels must be in [1, 4].");
+    int w = 0, h = 0, n = 0;
+    std::unique_ptr<unsigned char, void(*)(void*)> data(
+        stbi_load(path.c_str(), &w, &h, &n, shape.c), stbi_image_free);
+    if (!data) {
+        throw std::runtime_error("Failed to decode image " + path + ": " + stbi_failure_reason());
+    }
+    resize_to_chw(data.get(), w, h, shape.c, dst, shape.w, shape.h);
+#else
+    (void)path; (void)shape; (void)dst;
+    throw std::runtime_error("Image support is disabled in this build.");
+#endif
+}
+
 class DatasetFile
 {
 private:
@@ -392,18 +409,7 @@ void DatasetFile::LoadDataImages() {
 }
 
 void DatasetFile::load_image_into(const std::string& path, float* dst) const {
-#if NN_HAS_IMAGES
-    int w = 0, h = 0, n = 0;
-    std::unique_ptr<unsigned char, void(*)(void*)> data(
-        stbi_load(path.c_str(), &w, &h, &n, img_c), stbi_image_free);
-    if (!data) {
-        throw std::runtime_error("DatasetFile: failed to decode image " + path + ": " + stbi_failure_reason());
-    }
-    resize_to_chw(data.get(), w, h, img_c, dst, img_w, img_h);
-#else
-    (void)path; (void)dst;
-    throw std::runtime_error("DatasetFile: image directory support is disabled in this build.");
-#endif
+    load_image_chw(path, ImageShape(img_c, img_h, img_w), dst);
 }
 
 #if NN_HAS_IMAGES

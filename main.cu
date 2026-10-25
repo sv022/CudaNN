@@ -8,6 +8,7 @@
 
 #define TRAIN 1
 #define TEST 0
+#define INFER 2
 
 
 bool isCudaDeviceAvailable() {
@@ -46,6 +47,8 @@ void log_arg_error(std::string arg){
         << "<mode> <layers_conf_string> "
         << "<test_data_size> <test_data_path> "
         << "<weights_path> <current_dir> <report_file_name>\n";
+    std::cerr << "Usage for mode INFER = 2: " << arg << " "
+        << "<mode> <layers_conf_string> <image_path> <weights_path> [<c> <h> <w>]\n";
 }
 
 
@@ -61,7 +64,7 @@ int main(int argc, char* argv[]) {
     }
 
     const int mode = std::stoi(argv[1]);
-    if ((mode != TRAIN) && (mode != TEST)) {
+    if ((mode != TRAIN) && (mode != TEST) && (mode != INFER)) {
         log_arg_error(argv[0]);
         return 1;
     }
@@ -134,7 +137,7 @@ int main(int argc, char* argv[]) {
         cudaEventDestroy(start);
         cudaEventDestroy(stop);
 
-    } else {
+    } else if (mode == TEST) {
         if (argc != 8) {
             log_arg_error(argv[0]);
             return 1;
@@ -155,6 +158,14 @@ int main(int argc, char* argv[]) {
             current_directory,
             report_file_name
         );
+    } else {
+        if (argc != 5 && argc != 8) { log_arg_error(argv[0]); delete structure; return 1; }
+        
+        parse_network_structure(argv[2], OptimizerType::SGD, 0.0f, LossType::MSE, structure);
+        ImageShape shape(0);
+        if (argc == 8) shape = ImageShape(std::stoi(argv[5]), std::stoi(argv[6]), std::stoi(argv[7]));
+
+        predict(structure, std::string(argv[3]), std::string(argv[4]), shape);
     }
 
     free(structure);
