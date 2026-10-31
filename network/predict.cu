@@ -71,7 +71,7 @@ void predict(
     const bool is_softmax = (model.get_output_activation() == ActivationType::Softmax);
     std::cout << "class: " << cls << '\n' ;
     const int k = std::min<int>(out.size(), 5);
-    std::cout << "\ntop-" <<  k << (is_softmax ? "probabilities:" : "scores:") << ":\n";
+    std::cout << "------------\ntop-" <<  k << (is_softmax ? " probabilities:" : "scores:") << ":\n";
     std::vector<float> tmp = out;
     for (int i = 0; i < k; ++i) {
         int m = std::max_element(tmp.begin(), tmp.end()) - tmp.begin();
