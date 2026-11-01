@@ -21,6 +21,7 @@
 #include"maxpooling.cu"
 #include"activation.cu"
 #include"dropout.cu"
+#include"batchnorm.cu"
 
 
 class NeuralNetwork 
@@ -108,23 +109,28 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
     }
     loss_function = structure->loss_type;
 
+    int cur_channels = 0;
+
     for (LayerStructure* layer : structure->layers) {
         if (layer->layer_type == LayerType::Conv) {
             auto* c = static_cast<ConvStructure*>(layer);
             Conv* conv = new Conv(c->input_height, c->input_width, c->channels, c->kernel_size, c->num_kernels, c->stride, c->padding);
             if (layers.size() == 0) input_shape = ImageShape(c->channels, c->input_height, c->input_width);
+            cur_channels = c->num_kernels; 
             add_layer(conv);
 
         } else if (layer->layer_type == LayerType::Pool) {
             auto* p = static_cast<PoolStructure*>(layer);
             MaxPooling* pool = new MaxPooling(p->input_width, p->input_height, p->channels, p->pool, p->stride);
             if (layers.size() == 0) input_shape = ImageShape(p->channels, p->input_height, p->input_width);
+            cur_channels = p->channels; 
             add_layer(pool);
 
         } else if (layer->layer_type == LayerType::Dense) {
             auto* d = static_cast<DenseStructure*>(layer);
             Dense* dense = new Dense(d->input_nodes, d->output_nodes);
             if (layers.size() == 0) input_shape = ImageShape(d->input_nodes);
+            cur_channels = d->output_nodes;
             add_layer(dense);
 
         } else if (layer->layer_type == LayerType::Activation) {
@@ -156,6 +162,13 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
             Dropout* dropout = new Dropout(inferred_size, dr->drop_prob);
             add_layer(dropout);
 
+        } else if (layer->layer_type == LayerType::BatchNorm) {
+            if (layers.empty()) {
+                std::cerr << "BatchNorm layer cannot be the first layer in the network." << std::endl;
+                std::exit(1);
+            }
+            BatchNorm* bn = new BatchNorm(layers.back()->output_size, cur_channels);
+            add_layer(bn);
         } else {
             std::cerr << "Unknown layer type in NetworkStructure" << std::endl;
             std::exit(1);
