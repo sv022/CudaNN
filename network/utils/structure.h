@@ -11,7 +11,8 @@ enum class LayerType
     Pool,
     Dense,
     Activation,
-    Dropout
+    Dropout,
+    BatchNorm
 };
 
 struct LayerStructure
@@ -100,6 +101,11 @@ struct DropoutStructure : LayerStructure
     }
 };
 
+struct BatchNormStructure : LayerStructure
+{
+    BatchNormStructure() { layer_type = LayerType::BatchNorm; }
+};
+
 
 struct NetworkStructure
 {
@@ -109,6 +115,10 @@ struct NetworkStructure
     LossType loss_type;
 
     NetworkStructure(float lr = 0.001f, OptimizerType opt = OptimizerType::SGD, LossType lt = LossType::MSE): learning_rate(lr), opt_type(opt), loss_type(lt) {}
+
+    void add_batchnorm() {
+        layers.push_back(new BatchNormStructure());
+    }
 
     void add_dropout(unsigned int size, float drop_prob) {
         layers.push_back(new DropoutStructure(size, drop_prob));
@@ -154,7 +164,9 @@ struct NetworkStructure
             } else if (layer->layer_type == LayerType::Dropout) {
                 auto* dropout_layer = static_cast<DropoutStructure*>(layer);
                 structure_str += "dropout_" + std::to_string(dropout_layer->drop_prob) + "-";
-            } 
+            } else if (layer->layer_type == LayerType::BatchNorm) {
+                structure_str += "batchnorm-";
+            }
         }
         return structure_str.empty() ? structure_str : structure_str.substr(0, structure_str.size() - 1); // Remove trailing '-'
     }
@@ -201,6 +213,8 @@ struct NetworkStructure
                 auto* dropout_layer = static_cast<DropoutStructure*>(layers[i]);
                 json += "\t\t\t\"type\": \"dropout\",\n";
                 json += "\t\t\t\"drop_prob\": " + std::to_string(dropout_layer->drop_prob) + "\n\t\t}" + trailing_comma + "\n";
+            } else if (layers[i]->layer_type == LayerType::BatchNorm) {
+                json += "\t\t\t\"type\": \"batchnorm\"\n\t\t}" + trailing_comma + "\n";
             }
         }
         json += "\t]\n}";
@@ -238,8 +252,10 @@ void parse_network_structure(const std::string net_str, OptimizerType opt, float
         } else if (layer.rfind("dropout_", 0) == 0) {
             auto parts = split(layer.substr(8), '_');
             net->add_dropout(0, std::stof(parts[0]));
+        } else if (layer == "batchnorm") {
+            net->add_batchnorm();
         } else {
             throw std::runtime_error("Unknown layer type: " + layer);
-        }
+        } 
     }
 }
