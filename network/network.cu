@@ -57,7 +57,7 @@ private:
     void forward(float *inputs, int current_batch_size);
     void backward(float *inputs, float *targets, int current_batch_size);
     int predict(float *input);
-    void train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction = 0.0f);
+    void train(std::string data, int data_size, int epochs, int batch_size, float* train_loss_by_epoch, float* val_loss_by_epoch, float val_fraction = 0.0f);
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
     void get_outputs(float* dst) const { std::memcpy(dst, layers.back()->outputs, (size_t)output_nodes * sizeof(float)); };
@@ -269,7 +269,7 @@ void NeuralNetwork::backward(float * /*inputs*/, float *targets, int current_bat
 }
 
 
-void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* loss_by_epoch, float val_fraction) {
+void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* train_loss_by_epoch, float* val_loss_by_epoch, float val_fraction) {
     DatasetFile train_file(data, data_size, input_shape, output_nodes, batch_size, val_fraction);
 
     int num_batches = train_file.get_train_num_batches();
@@ -278,7 +278,9 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
 
     int val_num_batches = train_file.get_val_num_batches();
 
-    float epoch_loss = 0.0f;
+    float train_epoch_loss = 0.0f;
+    float val_epoch_loss = 0.0f;
+
     int last_batch_size_set = -1;
 
     bool do_validation = (val_fraction > 0.0f) && train_file.has_val();
@@ -309,15 +311,15 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
             backward(train_file.image_batch, train_file.target_batch, current_batch_size);
 
             if (b % progress_tick == 0 && b != 0) {
-                log_train_process(epochs, epoch, num_batches, b, epoch_loss);
+                log_train_process(epochs, epoch, num_batches, b, train_epoch_loss, val_epoch_loss);
             }
         }
 
-        float train_epoch_loss = total_loss / (float)(train_file.get_train_size());
+        float train_loss = total_loss / (float)(train_file.get_train_size());
+        train_loss_by_epoch[epoch - 1] = train_loss;
+        train_epoch_loss = train_loss;
 
         if (!do_validation) {
-            loss_by_epoch[epoch - 1] = train_epoch_loss;
-            epoch_loss = train_epoch_loss;
             continue;
         }
 
@@ -342,10 +344,10 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
             val_total_loss += batch_loss;
         }
 
-        float val_epoch_loss = val_total_loss / (float)(train_file.get_val_size());
+        float val_loss = val_total_loss / (float)(train_file.get_val_size());
 
-        loss_by_epoch[epoch - 1] = val_epoch_loss;
-        epoch_loss = val_epoch_loss;
+        val_loss_by_epoch[epoch - 1] = val_loss;
+        val_epoch_loss = val_loss;
 
         set_is_training(true);
     }
