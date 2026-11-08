@@ -1,6 +1,10 @@
 #pragma once
 #include<iostream>
-#define LOG 0
+#if defined(LOGGING)
+    #define LOG 1
+#else
+    #define LOG 0
+#endif
 
 void log_train_process(int epochs, int current_epoch, int batches, int current_batch, float train_epoch_loss, float val_epoch_loss){
     if (!LOG) return;
@@ -18,4 +22,9 @@ void log_test_process(int images, int current_image){
 void log_data_loading_process(int images, int current_image){
     if (!LOG) return;
     std::cout << "[Loading data] " << current_image << " / " << images << '\n';
+}
+
+void log_save_best_weights(int epoch, int best_acc, float best_loss){
+    if (!LOG) return;
+        std::cout << "[Training] Saved best weights at Epoch " << epoch << " | Best accuracy: " << best_acc << " | Best loss: " << best_loss << '\n';
 }
