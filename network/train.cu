@@ -2,6 +2,7 @@
 #include"network.cu"
 #include"utils/report.h"
 
+enum class WeightsMode;
 
 void train(
     NetworkStructure* structure,
@@ -12,7 +13,7 @@ void train(
     int test_data_size,
     std::string train_data,
     std::string test_data,
-    bool save_weights,
+    WeightsMode weights_mode,
     std::string weights_path,
     std::string current_directory,
     std::string report_file_name
@@ -26,21 +27,23 @@ void train(
         model.load_weights(weights_path);
     }
 
-    model.train(train_data, train_data_size, epochs, batch_size, train_loss_history, val_loss_history, val_fraction);
+    std::string saved_weights_filename = current_directory + "/runs/" + 
+        (report_file_name == "-" ? ( "Z-" + get_current_datetime_simple() + (weights_mode == WeightsMode::Best ? "-best" : "-final")) : (report_file_name)) + ".bin";
+    
+    std::string checkpoint_filename = (weights_mode == WeightsMode::Best ? saved_weights_filename : "");
+
+    model.train(train_data, train_data_size, epochs, batch_size, train_loss_history, val_loss_history, val_fraction, checkpoint_filename);
     
     int* test_targets = (int*)malloc(sizeof(int) * test_data_size);
     int* test_guesses = (int*)malloc(sizeof(int) * test_data_size);
-    
+
+    if (weights_mode == WeightsMode::Best) model.load_weights(checkpoint_filename);
     float accuracy = model.test(test_data, test_data_size, test_targets, test_guesses);
-    std::cout << "Final Test Accuracy: " << accuracy * 100.0f << "%" << std::endl;
-    
-    std::string saved_weights_filename = "";
-    if (save_weights) {
-        std::string structure_str = structure->get_structure_string();
-        saved_weights_filename = current_directory + "/runs/" + (report_file_name == "-" ? ( "Z-" + get_current_datetime_simple() ) : report_file_name) + ".bin";
-        
+    std::cout << (weights_mode == WeightsMode::Best ? "Best" : "Final") << " test accuracy: " << accuracy * 100.0f << "%" << std::endl;
+
+    if (weights_mode == WeightsMode::Final) {
         model.save_weights(saved_weights_filename);
-        std::cout << "Weights saved to " << saved_weights_filename << std::endl;
+        std::cout << "Final weights saved to " << saved_weights_filename << std::endl;
     }
 
     std::string json_network_structure = structure->structure_to_json();

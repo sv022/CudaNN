@@ -25,6 +25,11 @@
 
 const float inv255 = 1.0f / 255.0f;
 
+enum class WeightsMode {
+    Best,
+    Final
+};
+
 
 inline std::pair<int, float> parse_val_fraction(const std::string str) {
     std::vector<std::string> parts = split(str, '/');
@@ -48,6 +53,13 @@ inline std::pair<int, float> parse_val_fraction(const std::string str) {
     }
     
     return {val_base, val_fraction};
+}
+
+inline WeightsMode parse_save_weights_mode(const std::string mode) {
+    if (mode == "best") return WeightsMode::Best;
+    if (mode == "final") return WeightsMode::Final;
+    
+    throw std::invalid_argument("DatasetFile: Invalid weights_mode in config: " + mode);
 }
 
 inline void load_image_chw(const std::string& path, const ImageShape& shape, float* dst) {

@@ -43,6 +43,7 @@ private:
 
 
     float calculateLoss(const float* target_batch, int current_batch_size);
+    int calculateAccuracy(float* target_batch, int current_batch_size);
     int getMaxActivationIndex(float *target);
 
     public:
@@ -57,7 +58,7 @@ private:
     void forward(float *inputs, int current_batch_size);
     void backward(float *inputs, float *targets, int current_batch_size);
     int predict(float *input);
-    void train(std::string data, int data_size, int epochs, int batch_size, float* train_loss_by_epoch, float* val_loss_by_epoch, float val_fraction = 0.0f);
+    void train(std::string data, int data_size, int epochs, int batch_size, float* train_loss_by_epoch, float* val_loss_by_epoch, float val_fraction = 0.0f, std::string checkpoint_path = "");
     float test(std::string filePath, int data_size, int* test_targets, int* test_guesses);
 
     void get_outputs(float* dst) const { std::memcpy(dst, layers.back()->outputs, (size_t)output_nodes * sizeof(float)); };
@@ -143,13 +144,11 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
                 }
                 inferred_size = layers.back()->output_size;
             }
-
             Activation* activation = new Activation(inferred_size, a->activation_type);
             add_layer(activation);
 
         } else if (layer->layer_type == LayerType::Dropout) {
             auto* dr = static_cast<DropoutStructure*>(layer);
-
             int inferred_size = dr->size;
             if (inferred_size == 0) {
                 if (layers.empty()) {
@@ -158,7 +157,6 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
                 }
                 inferred_size = layers.back()->output_size;
             }
-
             Dropout* dropout = new Dropout(inferred_size, dr->drop_prob);
             add_layer(dropout);
 
@@ -169,6 +167,7 @@ NeuralNetwork::NeuralNetwork(const NetworkStructure* structure) {
             }
             BatchNorm* bn = new BatchNorm(layers.back()->output_size, cur_channels);
             add_layer(bn);
+
         } else {
             std::cerr << "Unknown layer type in NetworkStructure" << std::endl;
             std::exit(1);
@@ -231,6 +230,22 @@ float NeuralNetwork::calculateLoss(const float* target_batch, int current_batch_
     return loss;
 }
 
+int NeuralNetwork::calculateAccuracy(float* target_batch, int current_batch_size) {
+    float* output_batch = layers.back()->outputs;
+    int correct = 0;
+
+    for (int b = 0; b < current_batch_size; ++b) {
+        float* output = output_batch + (size_t)b * output_nodes;
+        float* target = target_batch + (size_t)b * output_nodes;
+
+        if (getMaxActivationIndex(output) == getMaxActivationIndex(target)) {
+            ++correct;
+        }
+    }
+
+    return correct;
+}
+
 void NeuralNetwork::forward(float *inputs, int current_batch_size) {
     size_t n = (size_t)current_batch_size * input_nodes;
     ensure_device(&d_input, &d_input_cap, n);
@@ -269,7 +284,7 @@ void NeuralNetwork::backward(float * /*inputs*/, float *targets, int current_bat
 }
 
 
-void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* train_loss_by_epoch, float* val_loss_by_epoch, float val_fraction) {
+void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch_size, float* train_loss_by_epoch, float* val_loss_by_epoch, float val_fraction, std::string checkpoint_path) {
     DatasetFile train_file(data, data_size, input_shape, output_nodes, batch_size, val_fraction);
 
     int num_batches = train_file.get_train_num_batches();
@@ -284,6 +299,10 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
     int last_batch_size_set = -1;
 
     bool do_validation = (val_fraction > 0.0f) && train_file.has_val();
+    bool save_best = (checkpoint_path != "");
+    
+    int best_correct = -1;
+    float best_loss = 1e10;
 
     for (int epoch = 1; epoch <= epochs; epoch++) {
 
@@ -292,6 +311,7 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
         train_file.shuffle();
 
         float total_loss = 0.0f;
+        int correct = 0;
 
         for (int b = 0; b < num_batches; b++) {
             if (b > 0) train_file.next_batch();
@@ -305,8 +325,8 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
 
             forward(train_file.image_batch, current_batch_size);
 
-            float batch_loss = calculateLoss(train_file.target_batch, current_batch_size);
-            total_loss += batch_loss;
+            total_loss += calculateLoss(train_file.target_batch, current_batch_size);
+            correct += calculateAccuracy(train_file.target_batch, current_batch_size);
 
             backward(train_file.image_batch, train_file.target_batch, current_batch_size);
 
@@ -320,6 +340,13 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
         train_epoch_loss = train_loss;
 
         if (!do_validation) {
+            const bool improved = correct > best_correct || (correct == best_correct && train_loss < best_loss);
+            if (improved && save_best) {
+                save_weights(checkpoint_path);
+                best_correct = correct;
+                best_loss = train_loss;
+                log_save_best_weights(epoch, best_correct, best_loss);
+            }
             continue;
         }
 
@@ -327,6 +354,7 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
         train_file.use_val();
 
         float val_total_loss = 0.0f;
+        int val_correct = 0;
 
         for (int b = 0; b < val_num_batches; b++) {
             if (b > 0) train_file.next_batch();
@@ -340,14 +368,22 @@ void NeuralNetwork::train(std::string data, int data_size, int epochs, int batch
 
             forward(train_file.image_batch, current_batch_size);
 
-            float batch_loss = calculateLoss(train_file.target_batch, current_batch_size);
-            val_total_loss += batch_loss;
+            val_total_loss += calculateLoss(train_file.target_batch, current_batch_size);
+            val_correct += calculateAccuracy(train_file.target_batch, current_batch_size);
         }
 
         float val_loss = val_total_loss / (float)(train_file.get_val_size());
 
         val_loss_by_epoch[epoch - 1] = val_loss;
         val_epoch_loss = val_loss;
+
+        const bool improved = val_correct > best_correct || (val_correct == best_correct && val_loss < best_loss);
+        if (improved && save_best) {
+            save_weights(checkpoint_path);
+            best_correct = val_correct;
+            best_loss = val_loss;
+            log_save_best_weights(epoch, best_correct, best_loss);
+        }
 
         set_is_training(true);
     }
@@ -404,6 +440,12 @@ int NeuralNetwork::predict(float *input){
 
 
 void NeuralNetwork::save_weights(std::string path) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) throw std::runtime_error("Failed to create or truncate weights file: " + path);
+    file.close();
+
+    if (!file) throw std::runtime_error("Failed to close weights: " + path);
+    
     for (auto &layer : layers) {
         layer->save_weights(path);
     }

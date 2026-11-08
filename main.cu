@@ -42,7 +42,7 @@ void log_arg_error(std::string arg){
         << "<mode> <layers_conf_string> "
         << "<optimizer> <learning_rate> <loss_function> <epochs> <batch_size> "
         << "<train_data_size> <test_data_size> <train_data_path> <test_data_path> " 
-        << "<save_weights> <weights_path> <current_dir> <report_file_name>\n";
+        << "<weights_mode> <weights_path> <current_dir> <report_file_name>\n";
     std::cerr << "Usage for mode TEST = 0: " << arg << " "
         << "<mode> <layers_conf_string> "
         << "<test_data_size> <test_data_path> "
@@ -98,8 +98,8 @@ int main(int argc, char* argv[]) {
         
         std::string train_data = argv[arg_counter++];
         std::string test_data = argv[arg_counter++];
-        bool save_weights = std::stoi(argv[arg_counter++]);
         
+        WeightsMode weights_mode = parse_save_weights_mode(argv[arg_counter++]);
         std::string weights_path = argv[arg_counter++];
         std::string current_directory = argv[arg_counter++];
         std::string report_file_name = argv[arg_counter++];
@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
             test_data_size,
             train_data,
             test_data,
-            save_weights,
+            weights_mode,
             weights_path,
             current_directory,
             report_file_name
@@ -168,7 +168,7 @@ int main(int argc, char* argv[]) {
         predict(structure, std::string(argv[3]), std::string(argv[4]), shape);
     }
 
-    free(structure);
+    delete structure;
 
     return 0;
 }
