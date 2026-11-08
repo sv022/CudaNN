@@ -22,6 +22,8 @@ To compile with image loading support make sure to add `./network/file/stb_image
 
 To compile without image loading support use `-DNN_NO_IMAGES` flag.
 
+To enable logging during processing use `-DLOGGING` flag.
+
 ## Usage
 
 You can use command line to run the program with given parameters.
@@ -38,7 +40,7 @@ conv_28x28x1_3_16_1_0-activation_relu-pool_26x26x16_2_2-conv_13x13x16_3_32_1_0-a
 
 Args list for training:
 ```sh
-<mode (TRAIN=1)> <layer_config_string> <optimizer> <learning_rate> <loss_function> <epochs> <batch_size> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <save_weights> <current_dir> <report_file_name>
+<mode (TRAIN=1)> <layer_config_string> <optimizer> <learning_rate> <loss_function> <epochs> <batch_size> <train_data_size> <test_data_size> <train_data_path> <test_data_path> <weights_mode> <current_dir> <report_file_name>
 ```
 
 Args list for testing:
@@ -56,7 +58,9 @@ Args list for inference:
 
 `<current_dir>` is where weights and report files will be saved in `./runs` subdirectory for TRAIN, `./predict` subdirectory for TEST.
 
-`<report_file_name>` will be used to generate the report file after the run is completed. Using '-' will automatically generate report name using datetime. 
+`<report_file_name>` will be used to generate the report file after the run is completed. Using '-' will automatically generate report name using datetime.
+
+For more details on CLI launch arguments see [project wiki](https://github.com/sv022/CudaNN/wiki) _(in development)_.
 
 Example (`run_train.bat`):
 
@@ -76,12 +80,12 @@ set TRAIN_SIZE=60000
 set TEST_SIZE=10000
 set TRAIN_PATH=D:/path/to/digits-mnist_train.csv
 set TEST_PATH=D:/path/to/digits-mnist_test.csv
-set SAVE_WEIGHTS=1
+set WEIGHTS_MODE=best
 set WEIGHTS_PATH=-
 set CURRENT_DIR=D:/results/are/saved/here
 set REPORT_FILE_NAME=-
 
-%EXE_PATH% %MODE% %LAYER_CONFIG% %OPTIMIZER% %LEARNING_RATE% %LOSS% %EPOCHS% %BATCH_SIZE% %TRAIN_SIZE% %TEST_SIZE% %TRAIN_PATH% %TEST_PATH% %SAVE_WEIGHTS% %WEIGHTS_PATH% %CURRENT_DIR% %REPORT_FILE_NAME%
+%EXE_PATH% %MODE% %LAYER_CONFIG% %OPTIMIZER% %LEARNING_RATE% %LOSS% %EPOCHS% %BATCH_SIZE% %TRAIN_SIZE% %TEST_SIZE% %TRAIN_PATH% %TEST_PATH% %WEIGHTS_MODE% %WEIGHTS_PATH% %CURRENT_DIR% %REPORT_FILE_NAME%
 ```
 
 Example (`run_test.bat`):
